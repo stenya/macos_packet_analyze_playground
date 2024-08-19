@@ -28,6 +28,13 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
 
     // PKTAP HEADER
     struct pktap_header *pktapHdr = (struct pktap_header *) packet;
+
+
+    //if (strcmp(pktapHdr->pth_ifname, "utun8") == 0) {
+    //    return;
+    //}
+
+
     printf("*** %s | pid: %04d | ipproto: %02d | family: %02d | dev: %s \n", 
         ((pktapHdr->pth_flags&PTH_FLAG_DIR_OUT)>0)?" IN" : "OUT",  
         pktapHdr->pth_pid, 
@@ -45,22 +52,28 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
         return;
     }
 
-    // Ethernet header
-    struct ether_header *eth_header = (struct ether_header *)data;
-    printf(" Ethernet Header (type=%d): \n", ntohs(eth_header->ether_type));
-    printf("\tSource MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-           eth_header->ether_shost[0], eth_header->ether_shost[1],
-           eth_header->ether_shost[2], eth_header->ether_shost[3],
-           eth_header->ether_shost[4], eth_header->ether_shost[5]);
-    printf("\tDestination MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-           eth_header->ether_dhost[0], eth_header->ether_dhost[1],
-           eth_header->ether_dhost[2], eth_header->ether_dhost[3],
-           eth_header->ether_dhost[4], eth_header->ether_dhost[5]);
+    // Ethernet header 
+    // THIS IS JUST FOR TESTS (not for use in produxtion): 
+    // if offset equals ether_header size - we read this data as ether_header
+    if (pktapHdr->pth_frame_pre_length == sizeof(struct ether_header))  
+    {
+        
+        struct ether_header *eth_header = (struct ether_header *)data;
+        printf(" Ethernet Header (type=%d): \n", ntohs(eth_header->ether_type));
+        printf("\tSource MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+            eth_header->ether_shost[0], eth_header->ether_shost[1],
+            eth_header->ether_shost[2], eth_header->ether_shost[3],
+            eth_header->ether_shost[4], eth_header->ether_shost[5]);
+        printf("\tDestination MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+            eth_header->ether_dhost[0], eth_header->ether_dhost[1],
+            eth_header->ether_dhost[2], eth_header->ether_dhost[3],
+            eth_header->ether_dhost[4], eth_header->ether_dhost[5]);
+    }
 
 
     if (pktapHdr->pth_protocol_family == AF_INET) {
         // IPv4 header
-        const struct ip *ipHdr   = (const struct ip *)&data[sizeof(struct ether_header)];
+        const struct ip *ipHdr   = (const struct ip *)&data[pktapHdr->pth_frame_pre_length];
         if (ipHdr!=NULL) 
         {
             printf("  Version: %d\n", ipHdr->ip_v);
@@ -79,7 +92,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     else if (pktapHdr->pth_protocol_family == AF_INET6)
     {
         // IPv6 header
-        const struct ip6_hdr *ip6Hdr = (const struct ip6_hdr *)&data[sizeof(struct ether_header)];
+        const struct ip6_hdr *ip6Hdr = (const struct ip6_hdr *)&data[pktapHdr->pth_frame_pre_length];
         if (ip6Hdr!=NULL) 
         {
             char src_ip[INET6_ADDRSTRLEN];
