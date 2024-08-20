@@ -14,6 +14,12 @@
 #define PRIVATE 1       // required to enable definition of 'pcap_set_want_pktap(pcap_t *, int);' in pcap.h
 #include "inc/pcap.h"
 
+typedef int pkt_handle_func(const struct pktap_header *pktapHdr, unsigned char* data, unsigned int len);
+
+pkt_handle_func*    _pkt_handler    = NULL;
+
+int                 _debug          = 1;
+
 // Packet handler function
 void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
     
@@ -29,18 +35,21 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     // PKTAP HEADER
     struct pktap_header *pktapHdr = (struct pktap_header *) packet;
 
-
-    //if (strcmp(pktapHdr->pth_ifname, "utun8") == 0) {
+    //if (_ifNameToFilter!=NULL && strcmp(pktapHdr->pth_ifname, _ifNameToFilter) != 0) { // e.g. "utun4"
     //    return;
     //}
 
-
-    printf("*** %s | pid: %04d | ipproto: %02d | family: %02d | dev: %s \n", 
-        ((pktapHdr->pth_flags&PTH_FLAG_DIR_OUT)>0)?" IN" : "OUT",  
-        pktapHdr->pth_pid, 
-        pktapHdr->pth_ipproto, 
-        pktapHdr->pth_protocol_family,
-        pktapHdr->pth_ifname );
+    if (_debug )
+    {
+        printf("*** %s | ipproto: %02d | family: %02d | next: %d | dev: %s | pid: %04d | proc: %s \n", 
+            ((pktapHdr->pth_flags&PTH_FLAG_DIR_OUT)>0)?" IN" : "OUT",          
+            pktapHdr->pth_ipproto, 
+            pktapHdr->pth_protocol_family,
+            pktapHdr->pth_type_next,
+            pktapHdr->pth_ifname,
+            pktapHdr->pth_pid, 
+            pktapHdr->pth_comm);
+    }
     
     const u_char* data = NULL;
     if  (pkthdr->len > pktapHdr->pth_length) {
@@ -55,9 +64,8 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     // Ethernet header 
     // THIS IS JUST FOR TESTS (not for use in produxtion): 
     // if offset equals ether_header size - we read this data as ether_header
-    if (pktapHdr->pth_frame_pre_length == sizeof(struct ether_header))  
-    {
-        
+    if (_debug && pktapHdr->pth_frame_pre_length == sizeof(struct ether_header))  
+    {        
         struct ether_header *eth_header = (struct ether_header *)data;
         printf(" Ethernet Header (type=%d): \n", ntohs(eth_header->ether_type));
         printf("\tSource MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
@@ -70,11 +78,10 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
             eth_header->ether_dhost[4], eth_header->ether_dhost[5]);
     }
 
-
     if (pktapHdr->pth_protocol_family == AF_INET) {
         // IPv4 header
         const struct ip *ipHdr   = (const struct ip *)&data[pktapHdr->pth_frame_pre_length];
-        if (ipHdr!=NULL) 
+        if (_debug && ipHdr!=NULL) 
         {
             printf("  Version: %d\n", ipHdr->ip_v);
             printf("  Header Length: %d (bytes)\n", ipHdr->ip_hl * 4);
@@ -88,12 +95,16 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
             printf("  Source IP: %s\n", inet_ntoa(ipHdr->ip_src));
             printf("  Destination IP: %s\n", inet_ntoa(ipHdr->ip_dst));
         }
+
+        if (_pkt_handler!=NULL) {
+            _pkt_handler(pktapHdr, (unsigned char*)ipHdr, ntohs(ipHdr->ip_len));
+        }
     } 
     else if (pktapHdr->pth_protocol_family == AF_INET6)
     {
         // IPv6 header
         const struct ip6_hdr *ip6Hdr = (const struct ip6_hdr *)&data[pktapHdr->pth_frame_pre_length];
-        if (ip6Hdr!=NULL) 
+        if (_debug && ip6Hdr!=NULL) 
         {
             char src_ip[INET6_ADDRSTRLEN];
             char dst_ip[INET6_ADDRSTRLEN];
@@ -117,7 +128,10 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     return; 
 }
 
-int DoPktap() {
+
+
+int DoPktap(pkt_handle_func *hdlr) {
+    _pkt_handler    = hdlr;
 
     char errBuff[PCAP_ERRBUF_SIZE];
     pcap_t * pkap = pcap_create("pktap", errBuff);
@@ -140,26 +154,7 @@ int DoPktap() {
         fprintf(stderr, "Error setting non-blocking mode\n");
         pcap_close(pkap);
         return -1;
-    }
-
-
-     // Set the filter to capture packets from utun4
-    /*
-    struct bpf_program fp;
-    char filter_exp[64];
-    snprintf(filter_exp, sizeof(filter_exp), "pktap.ifname == %s", "utun4");
-    if (pcap_compile(pkap, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN) == -1) {
-        fprintf(stderr, "Error compiling filter: %s\n", pcap_geterr(pkap));
-        pcap_close(pkap);
-        return -1;
-    }
-    if (pcap_setfilter(pkap, &fp) == -1) {
-        fprintf(stderr, "Error setting filter: %s\n", pcap_geterr(pkap));
-        pcap_freecode(&fp);
-        pcap_close(pkap);
-        return -1;
-    }
-    pcap_freecode(&fp);*/
+    }    
 
     // Start the packet capture loop
     pcap_loop(pkap, 0, packet_handler, NULL);

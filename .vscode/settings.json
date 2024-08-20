@@ -1,0 +1,23 @@
+{
+    "files.associations": {
+        "pcap.h": "c",
+        "types.h": "c",
+        "if.h": "c",
+        "if_ether.h": "c",
+        "ip.h": "c",
+        "ethernet.h": "c",
+        "_timeval32.h": "c",
+        "stdint.h": "c",
+        "uuid.h": "c",
+        "string.h": "c",
+        "pktap.h": "c",
+        "param.h": "c",
+        "unistd.h": "c",
+        "stdlib.h": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c",
+        "vector": "c",
+        "cstring": "c"
+    }
+}
