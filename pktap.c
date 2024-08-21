@@ -2,7 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <arpa/inet.h>
 #include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <netinet/ip6.h>
 #include <arpa/inet.h>
 
@@ -78,22 +81,33 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
             eth_header->ether_dhost[4], eth_header->ether_dhost[5]);
     }
 
+    const struct tcphdr *tcpHdr = NULL;
+    const struct udphdr *udpHdr = NULL;
+
     if (pktapHdr->pth_protocol_family == AF_INET) {
         // IPv4 header
         const struct ip *ipHdr   = (const struct ip *)&data[pktapHdr->pth_frame_pre_length];
         if (_debug && ipHdr!=NULL) 
         {
-            printf("  Version: %d\n", ipHdr->ip_v);
-            printf("  Header Length: %d (bytes)\n", ipHdr->ip_hl * 4);
-            printf("  Type of Service: %d\n", ipHdr->ip_tos);
-            printf("  Total Length: %d\n", ntohs(ipHdr->ip_len));
-            printf("  Identification: %d\n", ntohs(ipHdr->ip_id));
-            printf("  Flags and Fragment Offset: %d\n", ntohs(ipHdr->ip_off));
-            printf("  Time to Live: %d\n", ipHdr->ip_ttl);
-            printf("  Protocol: %d\n", ipHdr->ip_p);
-            printf("  Header Checksum: %d\n", ntohs(ipHdr->ip_sum));
-            printf("  Source IP: %s\n", inet_ntoa(ipHdr->ip_src));
-            printf("  Destination IP: %s\n", inet_ntoa(ipHdr->ip_dst));
+            if (ipHdr->ip_p == IPPROTO_TCP) 
+                tcpHdr = (const struct tcphdr *)((const u_char *)ipHdr + ipHdr->ip_hl * 4);
+            else if (ipHdr->ip_p == IPPROTO_UDP)
+                udpHdr = (const struct udphdr *)((const u_char *)ipHdr + ipHdr->ip_hl * 4);
+
+            if (_debug) 
+            {
+                printf("  Version: %d\n", ipHdr->ip_v);
+                printf("  Header Length: %d (bytes)\n", ipHdr->ip_hl * 4);
+                printf("  Type of Service: %d\n", ipHdr->ip_tos);
+                printf("  Total Length: %d\n", ntohs(ipHdr->ip_len));
+                printf("  Identification: %d\n", ntohs(ipHdr->ip_id));
+                printf("  Flags and Fragment Offset: %d\n", ntohs(ipHdr->ip_off));
+                printf("  Time to Live: %d\n", ipHdr->ip_ttl);
+                printf("  Protocol: %d\n", ipHdr->ip_p);
+                printf("  Header Checksum: %d\n", ntohs(ipHdr->ip_sum));
+                printf("  Source IP: %s\n", inet_ntoa(ipHdr->ip_src));
+                printf("  Destination IP: %s\n", inet_ntoa(ipHdr->ip_dst));
+            }
         }
 
         if (_pkt_handler!=NULL) {
@@ -104,25 +118,56 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     {
         // IPv6 header
         const struct ip6_hdr *ip6Hdr = (const struct ip6_hdr *)&data[pktapHdr->pth_frame_pre_length];
-        if (_debug && ip6Hdr!=NULL) 
+        if (ip6Hdr!=NULL) 
         {
-            char src_ip[INET6_ADDRSTRLEN];
-            char dst_ip[INET6_ADDRSTRLEN];
-            inet_ntop(AF_INET6, &(ip6Hdr->ip6_src), src_ip, INET6_ADDRSTRLEN);
-            inet_ntop(AF_INET6, &(ip6Hdr->ip6_dst), dst_ip, INET6_ADDRSTRLEN);
-            printf("  Version: %d\n", ip6Hdr->ip6_vfc);
-            printf("  Traffic Class: %d\n", ip6Hdr->ip6_flow);
-            printf("  Flow Label: %d\n", ip6Hdr->ip6_flow);
-            printf("  Payload Length: %d\n", ntohs(ip6Hdr->ip6_plen));
-            printf("  Next Header: %d\n", ip6Hdr->ip6_nxt);
-            printf("  Hop Limit: %d\n", ip6Hdr->ip6_hlim);
-            printf("  Source IP: %s\n", src_ip);
-            printf("  Destination IP: %s\n", dst_ip);
+            if (ip6Hdr->ip6_nxt == IPPROTO_TCP) 
+                tcpHdr = (const struct tcphdr *)((const u_char *)ip6Hdr + sizeof(struct ip6_hdr));
+            else if (ip6Hdr->ip6_nxt == IPPROTO_UDP)
+                udpHdr = (const struct udphdr *)((const u_char *)ip6Hdr + sizeof(struct ip6_hdr));
+
+            if (_debug) 
+            {
+                char src_ip[INET6_ADDRSTRLEN];
+                char dst_ip[INET6_ADDRSTRLEN];
+                inet_ntop(AF_INET6, &(ip6Hdr->ip6_src), src_ip, INET6_ADDRSTRLEN);
+                inet_ntop(AF_INET6, &(ip6Hdr->ip6_dst), dst_ip, INET6_ADDRSTRLEN);
+                printf("  Version: %d\n", ip6Hdr->ip6_vfc);
+                printf("  Traffic Class: %d\n", ip6Hdr->ip6_flow);
+                printf("  Flow Label: %d\n", ip6Hdr->ip6_flow);
+                printf("  Payload Length: %d\n", ntohs(ip6Hdr->ip6_plen));
+                printf("  Next Header: %d\n", ip6Hdr->ip6_nxt);
+                printf("  Hop Limit: %d\n", ip6Hdr->ip6_hlim);
+                printf("  Source IP: %s\n", src_ip);
+                printf("  Destination IP: %s\n", dst_ip);
+            }
         }
     }
     else
     {
         printf("NOT IPv4 or IPv6\n");
+    }
+
+    if (_debug)
+    {
+        if (tcpHdr!=NULL) {
+            printf("  TCP Header: \n");
+            printf("    Source Port: %d\n", ntohs(tcpHdr->th_sport));
+            printf("    Destination Port: %d\n", ntohs(tcpHdr->th_dport));
+            printf("    Sequence Number: %u\n", ntohl(tcpHdr->th_seq));
+            printf("    Acknowledgment Number: %u\n", ntohl(tcpHdr->th_ack));
+            printf("    Data Offset: %d (bytes)\n", tcpHdr->th_off * 4);
+            printf("    Flags: %d\n", tcpHdr->th_flags);
+            printf("    Window: %d\n", ntohs(tcpHdr->th_win));
+            printf("    Checksum: %d\n", ntohs(tcpHdr->th_sum));
+            printf("    Urgent Pointer: %d\n", ntohs(tcpHdr->th_urp));
+        }
+        else if (udpHdr!=NULL) {
+            printf("  UDP Header: \n");
+            printf("    Source Port: %d\n", ntohs(udpHdr->uh_sport));
+            printf("    Destination Port: %d\n", ntohs(udpHdr->uh_dport));
+            printf("    Length: %d\n", ntohs(udpHdr->uh_ulen));
+            printf("    Checksum: %d\n", ntohs(udpHdr->uh_sum));
+        }
     }
 
     return; 
