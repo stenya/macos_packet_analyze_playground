@@ -5,6 +5,9 @@
 
 #include "inc/pktap.h"
 
+#include "checksum.c"
+#include "print_frame_helpers.c"
+
 unsigned char buffer[sizeof(struct ether_header) + 0xFFFF] = {0};
 
 pcap_t *handle = NULL;
@@ -15,9 +18,7 @@ unsigned char* _dstIfMac;
 
 char _filter_interface_name[IFNAMSIZ] = {0};
 
-void update_ip_header_checksum(struct ip *ip_header);
-void update_tcp_checksum(struct ip *ip_header, struct tcphdr *tcp_header, const u_char *payload, int payload_len);
-void update_udp_checksum(struct ip *ip_header, struct udphdr *udp_header, const u_char *payload, int payload_len);
+int injectToDefaultInterface(unsigned char* ipData, unsigned int len);
 
 int openForInjection(
     char* if_name_default, 
@@ -59,39 +60,66 @@ int inject_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsi
     if (handle == 0 || pktapHdr == NULL || ipData == NULL) 
         return -1;
 
+    // TODO: currently we are using only IPV4. We must support IPv6 also!
     if (len < sizeof(struct ether_header) + sizeof(struct ip))
         return -2;
 
-    int totalLen = sizeof(struct ether_header) + len;
-    if (totalLen > sizeof(buffer))
-        return -3;
+    // ------------------------------------------------ DEBUG
+    struct ip *ip4Hdr   = NULL;
+    if (pktapHdr->pth_protocol_family == AF_INET) 
+    {
+        ip4Hdr   = (struct ip *)ipData;
+        //printf("  -Source IP: %s\n", inet_ntoa(ip4Hdr->ip_src));
+        //printf("  -Destination IP: %s\n", inet_ntoa(ip4Hdr->ip_dst));
+        if (strcmp(inet_ntoa(ip4Hdr->ip_src), "93.184.216.34")==0)
+        {
+            printf("!===>>>GOT RESPONSE!\n");
+            printf("(((((((<<<<<<<<<<<<<<<<<<<<<<<<\n");
+            print_pktap_header_all_details(pktapHdr, ipData, len);
+            printf(")))))))>>>>>>>>>>>>>>>>>>>>>>>>\n");
+        }
+    }
 
-    memset(buffer, 0, totalLen); // TODO: we can skip this memset
+    if (strcmp(inet_ntoa(ip4Hdr->ip_dst), "93.184.216.34")==0)
+    {
+        printf("====>>> sending...\n");
+        printf("(((((((<<<<<<<<<<<<<<<<<<<<<<<<\n");
+        print_pktap_header_all_details(pktapHdr, ipData, len);
+        printf(")))))))>>>>>>>>>>>>>>>>>>>>>>>>\n");
+    }
+    // ------------------------------------------------
 
-    struct ether_header *eth_header = (struct ether_header *)buffer;
 
-    // TODO: currently we are using only IPV4. We must support IPv6 also!
-    struct ip *ip_header = (struct ip *)(buffer + sizeof(struct ether_header)); 
+    // process only outgoing packets
+    if ((pktapHdr->pth_flags & PTH_FLAG_DIR_OUT)==0) {
+        return 0;
+    }
     
     // process only packets from the desired interface
     if (strncmp(_filter_interface_name, pktapHdr->pth_ifname, IFNAMSIZ) != 0) {
         return 0;
     }
 
-    // process only outgoing packets
-    if ((pktapHdr->pth_flags & PTH_FLAG_DIR_OUT) == 0) {        
-        return 0;
-    }
+    //print_pktap_header(pktapHdr, "   ++++ ");    
+    //printf("<<<<<<<<<<<<<<<<<<<<<<<<\n");
+    //print_pktap_header_all_details(pktapHdr, ipData, len);
+    //printf(">>>>>>>>>>>>>>>>>>>>>>>>\n");
 
-     printf("+++ %s | ipproto: %02d | family: %02d | next: %d | dev: %s | pid: %04d | proc: %s \n", 
-            ((pktapHdr->pth_flags&PTH_FLAG_DIR_OUT)>0)?" IN" : "OUT",          
-            pktapHdr->pth_ipproto, 
-            pktapHdr->pth_protocol_family,
-            pktapHdr->pth_type_next,
-            pktapHdr->pth_ifname,
-            pktapHdr->pth_pid, 
-            pktapHdr->pth_comm);
+    int ret = injectToDefaultInterface(ipData, len);
+    //printf("\n");
+    return ret;
+}
 
+
+int injectToDefaultInterface(unsigned char* ipData, unsigned int len) 
+{
+    int totalLen = sizeof(struct ether_header) + len;
+    if (totalLen > sizeof(buffer))
+        return -3;
+
+    memset(buffer, 0, totalLen); // TODO: we can skip this memset
+    struct ether_header *eth_header = (struct ether_header *)buffer;   
+    struct ip *ip_header = (struct ip *)(buffer + sizeof(struct ether_header)); 
 
     // set source and destination MAC addresses
     memcpy(eth_header->ether_dhost, _dstIfMac, ETHER_ADDR_LEN);
@@ -129,82 +157,8 @@ int inject_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsi
     if (pcap_inject(handle, buffer, totalLen) == -1) {
         pcap_perror(handle, "Error injecting packet");
     } else {
-        printf("Packet injected successfully\n");
+        //printf("Packet injected successfully\n");
     }
 
     return 0;
-}
-
-// Function to calculate the IP header checksum
-uint16_t calculate_checksum(uint16_t *buf, int nwords) {
-    uint32_t sum = 0;
-    for (int i = 0; i < nwords; i++) {
-        sum += buf[i];
-    }
-    // Add carry bits to the sum
-    while (sum >> 16) {
-        sum = (sum & 0xFFFF) + (sum >> 16);
-    }
-    // Take the one's complement of the sum
-    return (uint16_t)(~sum);
-}
-
-void update_ip_header_checksum(struct ip *ip_header) {
-    ip_header->ip_sum = 0; // Set checksum field to 0
-    ip_header->ip_sum = calculate_checksum((uint16_t *)ip_header, ip_header->ip_hl * 2);
-}
-
-// Pseudo-header structure for checksum calculation
-struct pseudo_header {
-    uint32_t src_addr;
-    uint32_t dst_addr;
-    uint8_t placeholder;
-    uint8_t protocol;
-    uint16_t length;
-};
-
-// Function to update the TCP checksum
-void update_tcp_checksum(struct ip *ip_header, struct tcphdr *tcp_header, const u_char *payload, int payload_len) {
-    tcp_header->th_sum = 0;
-
-    struct pseudo_header psh;
-    psh.src_addr = ip_header->ip_src.s_addr;
-    psh.dst_addr = ip_header->ip_dst.s_addr;
-    psh.placeholder = 0;
-    psh.protocol = IPPROTO_TCP;
-    psh.length = htons(sizeof(struct tcphdr) + payload_len);
-
-    int psize = sizeof(struct pseudo_header) + sizeof(struct tcphdr) + payload_len;
-    char *pseudogram = malloc(psize);
-
-    memcpy(pseudogram, &psh, sizeof(struct pseudo_header));
-    memcpy(pseudogram + sizeof(struct pseudo_header), tcp_header, sizeof(struct tcphdr));
-    memcpy(pseudogram + sizeof(struct pseudo_header) + sizeof(struct tcphdr), payload, payload_len);
-
-    tcp_header->th_sum = calculate_checksum((uint16_t *)pseudogram, (psize + 1) / 2);
-
-    free(pseudogram);
-}
-
-// Function to update the UDP checksum
-void update_udp_checksum(struct ip *ip_header, struct udphdr *udp_header, const u_char *payload, int payload_len) {
-    udp_header->uh_sum = 0;
-    
-    struct pseudo_header psh;
-    psh.src_addr = ip_header->ip_src.s_addr;
-    psh.dst_addr = ip_header->ip_dst.s_addr;
-    psh.placeholder = 0;
-    psh.protocol = IPPROTO_UDP;
-    psh.length = htons(sizeof(struct udphdr) + payload_len);
-
-    int psize = sizeof(struct pseudo_header) + sizeof(struct udphdr) + payload_len;
-    char *pseudogram = malloc(psize);
-
-    memcpy(pseudogram, &psh, sizeof(struct pseudo_header));
-    memcpy(pseudogram + sizeof(struct pseudo_header), udp_header, sizeof(struct udphdr));
-    memcpy(pseudogram + sizeof(struct pseudo_header) + sizeof(struct udphdr), payload, payload_len);
-
-    udp_header->uh_sum = calculate_checksum((uint16_t *)pseudogram, psize / 2);
-
-    free(pseudogram);
 }

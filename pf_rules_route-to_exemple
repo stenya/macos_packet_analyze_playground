@@ -1,9 +1,11 @@
-# reload default rules from /etc/pf.conf
-# sudo pfctl -f /etc/pf.conf
+# Reload default rules from /etc/pf.conf
+# > sudo pfctl -e
+# > sudo pfctl -f /etc/pf.conf
+# > sudo pfctl -s rules
 
-src_if = "utun6"  # Source interface (VPN interface)
-dst_if = "utun4"  # Destination interface (temporary TUN to route all VPN traffic)
+if_vpn = "utun5"  # Source interface (VPN interface)
+if_tun = "utun4"  # Destination interface (temporary TUN to route all VPN traffic)
 
-pass in quick on $src_if all no state
-pass out quick on $dst_if all flags any keep state
-pass out quick on $src_if route-to $dst_if
+pass in quick on $if_vpn all no state
+pass out quick on $if_tun all flags any keep state
+pass out quick on $if_vpn route-to $if_tun

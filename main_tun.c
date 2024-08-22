@@ -1,3 +1,5 @@
+//  gcc -o createtun  main.c -lpcap 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,17 +21,11 @@
 // Build:
 //  gcc -o createtun  main.c  
 
-// -----------------------------------------------------------
-volatile sig_atomic_t stop = 0;
-void handle_signal(int signal) {
-    stop = 1;
-}
 
-// -----------------------------------------------------------
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <net/ethernet.h> 
-
+/*
 // Function to print MAC address
 void print_mac_address(const uint8_t *mac) {
     for (int i = 0; i < ETHER_ADDR_LEN; i++) {
@@ -38,7 +34,7 @@ void print_mac_address(const uint8_t *mac) {
             printf(":");
         }
     }
-}
+}*/
 
 // Function to print IP address
 void print_ip_address(struct in_addr ip) {
@@ -46,7 +42,7 @@ void print_ip_address(struct in_addr ip) {
     inet_ntop(AF_INET, &ip, ip_str, INET_ADDRSTRLEN);
     printf("%s", ip_str);
 }
-
+/*
 // Function to print Ethernet frame data
 void print_ethernet_frame(const uint8_t *buffer, ssize_t length) {
     if (length < sizeof(struct ether_header)) {
@@ -87,7 +83,7 @@ void print_ethernet_frame(const uint8_t *buffer, ssize_t length) {
     }
     printf("\n");
 }
-
+*/
 void print_ip_frame(const uint8_t *buffer, ssize_t length) 
 {   
     if (length <= 4)
@@ -131,9 +127,18 @@ void print_ip_frame(const uint8_t *buffer, ssize_t length)
 }
 
 // -----------------------------------------------------------
-
-int CreateUTUN() {
     int sockfd;
+// -----------------------------------------------------------
+volatile sig_atomic_t stop = 0;
+void handle_signal(int signal) {
+    stop = 1;
+    close(sockfd);
+}
+
+// -----------------------------------------------------------
+
+int CreateUTUN(const char *ip_address) {
+
     struct sockaddr_ctl addr;
     struct ctl_info ctl_info;
     char ifname[IFNAMSIZ];
@@ -192,7 +197,7 @@ int CreateUTUN() {
 
     struct sockaddr_in *addr_in = (struct sockaddr_in *)&ifr.ifr_addr;
     addr_in->sin_family = AF_INET;
-    inet_pton(AF_INET, "10.88.88.88", &addr_in->sin_addr);
+    inet_pton(AF_INET, ip_address, &addr_in->sin_addr);
 
     if (ioctl(fd, SIOCSIFADDR, &ifr) == -1) {
         perror("ioctl");
@@ -238,4 +243,16 @@ int CreateUTUN() {
     // For demonstration, we just close it here.
     close(sockfd);
     return 0;
+}
+
+int main(int argc, char *argv[]) {
+    char* default_IP = "10.88.88.89";
+    char *ip = default_IP;
+
+    if (argc >= 2) 
+        ip = argv[1];
+
+    printf("Start ... (assign device IP: %s)\n", ip);
+
+    return CreateUTUN(ip);
 }
