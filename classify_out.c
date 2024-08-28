@@ -8,60 +8,69 @@
 #include "checksum.c"
 #include "print_frame_helpers.c"
 
+#include "do_bpf.h"
+
+#include "config.h"
+
 unsigned char buffer[sizeof(struct ether_header) + 0xFFFF] = {0};
 
-pcap_t *handle = NULL;
-
-unsigned char* _ifMac;
-struct in_addr _ifAddr;
-unsigned char* _dstIfMac;
-
-char _filter_interface_name[IFNAMSIZ] = {0};
+//#define _USE_BPF_
+#ifdef _USE_BPF_
+    int     handle_default_if_bpf_fd = 0;
+#else
+    pcap_t *handle_default_if_pcap  = NULL;
+#endif
 
 int injectToDefaultInterface(unsigned char* ipData, unsigned int len);
 
-int openForInjection(
-    char* if_name_default, 
-    unsigned char* if_default_MAC, 
-    struct in_addr if_default_Ipv4Addr, 
-    unsigned char* route_MAC,
-    char *filter_ifname)
-{
-    _ifMac      = if_default_MAC;
-    _ifAddr     = if_default_Ipv4Addr;
-    _dstIfMac   = route_MAC;
-
-    strncpy(_filter_interface_name, filter_ifname, IFNAMSIZ);
-    //_filter_interface_name = filter_ifname;
-
+int classify_openForInjection()
+{    
+#ifdef _USE_BPF_
+    if (bpfOpen(IF_DEFAULT_NAME, &handle_default_if_bpf_fd) != 0) {
+        fprintf(stderr, "Couldn't open device: %s\n", IF_DEFAULT_NAME);
+        return 1;
+    }
+#else
     char errbuf[PCAP_ERRBUF_SIZE];
-    
-    handle = pcap_open_live(if_name_default, BUFSIZ, 1, 1, errbuf);
-    if (handle == NULL) {
+    handle_default_if_pcap = pcap_open_live(IF_DEFAULT_NAME, BUFSIZ, 0, 0, errbuf);
+    if (handle_default_if_pcap == NULL) {
         fprintf(stderr, "Couldn't open device: %s\n", errbuf);
         return 1;
     }
-
+#endif
     return 0; 
 }
 
 int closeForInjection() {
-    if (handle == NULL)
+#ifdef _USE_BPF_
+    if (handle_default_if_bpf_fd == 0)
         return 0;
-
-    pcap_close(handle);
-    handle = NULL;
-
+    bpfClose(handle_default_if_bpf_fd);
+    handle_default_if_bpf_fd = 0;
+#else
+    if (handle_default_if_pcap == NULL)
+        return 0;
+    pcap_close(handle_default_if_pcap);
+    handle_default_if_pcap = NULL;
+#endif
     return 0;
 }
 
-int inject_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsigned int len) 
+int classify_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsigned int len) 
 {
-    if (handle == 0 || pktapHdr == NULL || ipData == NULL) 
+#ifdef _USE_BPF_
+    if (handle_default_if_bpf_fd == 0) 
+        return -1;
+#else
+    if (handle_default_if_pcap == NULL) 
+        return -1;
+#endif
+
+    if (pktapHdr == NULL || ipData == NULL) 
         return -1;
 
     // TODO: currently we are using only IPV4. We must support IPv6 also!
-    if (len < sizeof(struct ether_header) + sizeof(struct ip))
+    if (len < sizeof(struct ip))
         return -2;
 
     // ------------------------------------------------ DEBUG
@@ -69,26 +78,29 @@ int inject_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsi
     if (pktapHdr->pth_protocol_family == AF_INET) 
     {
         ip4Hdr   = (struct ip *)ipData;
-        //printf("  -Source IP: %s\n", inet_ntoa(ip4Hdr->ip_src));
-        //printf("  -Destination IP: %s\n", inet_ntoa(ip4Hdr->ip_dst));
         if (strcmp(inet_ntoa(ip4Hdr->ip_src), "93.184.216.34")==0)
         {
-            printf("!===>>>GOT RESPONSE!\n");
-            printf("(((((((<<<<<<<<<<<<<<<<<<<<<<<<\n");
+            printf("classify: !===>>>GOT RESPONSE!\n");
+            printf("classify:(((((((<<<<<<<<<<<<<<<<<<<<<<<<\n");
             print_pktap_header_all_details(pktapHdr, ipData, len);
-            printf(")))))))>>>>>>>>>>>>>>>>>>>>>>>>\n");
+            printf("classify:)))))))>>>>>>>>>>>>>>>>>>>>>>>>\n");
+        }    
+        if (strcmp(inet_ntoa(ip4Hdr->ip_dst), "93.184.216.34")==0)
+        {
+            printf("classify:====>>> sending...\n");
+            printf("classify:(((((((<<<<<<<<<<<<<<<<<<<<<<<<\n");
+            print_pktap_header_all_details(pktapHdr, ipData, len);
+            printf("classify:)))))))>>>>>>>>>>>>>>>>>>>>>>>>\n");
         }
+        /*
+        if (strcmp(inet_ntoa(ip4Hdr->ip_dst), "1.1.1.1")==0)
+        {
+            printf("classify:====>>> 1.1.1.1 OUT...\n");
+            print_pktap_header_all_details(pktapHdr, ipData, len);
+        }*/
     }
-
-    if (strcmp(inet_ntoa(ip4Hdr->ip_dst), "93.184.216.34")==0)
-    {
-        printf("====>>> sending...\n");
-        printf("(((((((<<<<<<<<<<<<<<<<<<<<<<<<\n");
-        print_pktap_header_all_details(pktapHdr, ipData, len);
-        printf(")))))))>>>>>>>>>>>>>>>>>>>>>>>>\n");
-    }
+    //print_pktap_header_all_details(pktapHdr, ipData, len);
     // ------------------------------------------------
-
 
     // process only outgoing packets
     if ((pktapHdr->pth_flags & PTH_FLAG_DIR_OUT)==0) {
@@ -96,7 +108,7 @@ int inject_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsi
     }
     
     // process only packets from the desired interface
-    if (strncmp(_filter_interface_name, pktapHdr->pth_ifname, IFNAMSIZ) != 0) {
+    if (strncmp(IF_vTUN_NAME, pktapHdr->pth_ifname, IFNAMSIZ) != 0) {
         return 0;
     }
 
@@ -110,7 +122,6 @@ int inject_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsi
     return ret;
 }
 
-
 int injectToDefaultInterface(unsigned char* ipData, unsigned int len) 
 {
     int totalLen = sizeof(struct ether_header) + len;
@@ -122,19 +133,18 @@ int injectToDefaultInterface(unsigned char* ipData, unsigned int len)
     struct ip *ip_header = (struct ip *)(buffer + sizeof(struct ether_header)); 
 
     // set source and destination MAC addresses
-    memcpy(eth_header->ether_dhost, _dstIfMac, ETHER_ADDR_LEN);
-    memcpy(eth_header->ether_shost, _ifMac, ETHER_ADDR_LEN);
+    memcpy(eth_header->ether_dhost, ROUTER_MAC, ETHER_ADDR_LEN);
+    memcpy(eth_header->ether_shost, IF_DEFAULT_MAC, ETHER_ADDR_LEN);
     eth_header->ether_type = htons(ETHERTYPE_IP);
 
     // copy packet data
     memcpy(ip_header, ipData, len);
 
     //update the source IP address
-    ip_header->ip_src = _ifAddr;
+    ip_header->ip_src = IF_DEFAULT_IP;
 
     //update IPv4 checksum
     update_ip_header_checksum(ip_header);
-
 
     // Update TCP/UDP checksum
     if (ip_header->ip_p == IPPROTO_TCP) {
@@ -148,17 +158,22 @@ int injectToDefaultInterface(unsigned char* ipData, unsigned int len)
         struct udphdr *udp_header = (struct udphdr *)((const u_char *)ip_header + ip_header->ip_hl * 4);
         const u_char *payload = (const u_char *)udp_header + sizeof(struct udphdr);
         int payload_len = ntohs(udp_header->uh_ulen) - sizeof(struct udphdr);
-
-        // Update UDP checksum
         update_udp_checksum(ip_header, udp_header, payload, payload_len);
     }
 
-    // Inject the packet
-    if (pcap_inject(handle, buffer, totalLen) == -1) {
-        pcap_perror(handle, "Error injecting packet");
+#ifdef _USE_BPF_
+    if (bpfInjectPacket(handle_default_if_bpf_fd, buffer, totalLen) != 0) {
+        fprintf(stderr, "Error injecting packet\n");
     } else {
         //printf("Packet injected successfully\n");
     }
-
+#else
+    // Inject the packet
+    if (pcap_inject(handle_default_if_pcap, buffer, totalLen) == -1) {
+        pcap_perror(handle_default_if_pcap, "Error injecting packet");
+    } else {
+        //printf("Packet injected successfully\n");
+    }
+#endif
     return 0;
 }

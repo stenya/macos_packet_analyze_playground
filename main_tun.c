@@ -1,4 +1,4 @@
-//  gcc -o createtun  main.c -lpcap 
+//  gcc -o createtun  main_tun.c  
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +19,7 @@
 #define AF_SYS_CONTROL 2
 
 // Build:
-//  gcc -o createtun  main.c  
+//  gcc -o createtun  main_tun.c  
 
 
 #include <netinet/if_ether.h>

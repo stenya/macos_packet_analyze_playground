@@ -1,4 +1,7 @@
 
+#ifndef _CHECKSUM_C_
+#define _CHECKSUM_C_
+
 #include <netinet/ip.h>
 #include <netinet/in.h>
 #include <pcap/pcap.h>
@@ -77,3 +80,5 @@ void update_udp_checksum(struct ip *ip_header, struct udphdr *udp_header, const 
 
     free(pseudogram);
 }
+
+#endif //_CHECKSUM_C_

@@ -8,6 +8,7 @@
                 "-fdiagnostics-color=always",
                 "-g",
                 "${workspaceFolder}/main.c",
+                "${workspaceFolder}/do_bpf.c",
                 "-o",
                 "${workspaceFolder}/b.out",
                 "-lpcap"

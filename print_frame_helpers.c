@@ -118,7 +118,7 @@ int print_pktap_header_all_details(const struct pktap_header *pktapHdr, unsigned
     print_pktap_header(pktapHdr, "");
 
     // TODO: currently we are using only IPV4. We must support IPv6 also!
-    if (len < sizeof(struct ether_header) + sizeof(struct ip))
+    if (len < sizeof(struct ip))
         return -2;
 
     const struct ip *ipHdr   = NULL;
@@ -159,6 +159,8 @@ int print_pktap_header_all_details(const struct pktap_header *pktapHdr, unsigned
 
     if (tcpHdr!=NULL)       print_tcphdr(tcpHdr, "");
     else if (udpHdr!=NULL)  print_udphdr(udpHdr, "");
+
+    return 0;
 } 
 
 #endif // _PRINT_FRAME_HELPERS_C_

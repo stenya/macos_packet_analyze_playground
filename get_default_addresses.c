@@ -110,33 +110,29 @@ int get_addresses(
     if (get_default_interface(out_DefIfName, sizeof(IFNAMSIZ)) != 0) {
         printf("Failed to get default interface\n");
         return -1;
-    }
-    printf("Default Interface: %s\n", out_DefIfName);
+    }  
 
     // Get IP address of default interface
     if (get_ip_address(out_DefIfName, out_DefIfIPv4, INET_ADDRSTRLEN) != 0) {
         printf("Failed to get IP address\n");
         return -1;
     }
-    printf("IP Address: %s\n", out_DefIfIPv4);
+    
 
     // Get MAC address of default interface
     if (get_mac_address(out_DefIfName, out_DefIfMAC) != 0) {
         printf("Failed to get MAC address\n");
         return -1;
     }
-    printf("MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
-           out_DefIfMAC[0], out_DefIfMAC[1], out_DefIfMAC[2],
-           out_DefIfMAC[3], out_DefIfMAC[4], out_DefIfMAC[5]);
 
     // Get MAC address of default router
     if (get_router_mac_address(out_RouterMAC) != 0) {
         printf("Failed to get router MAC address\n");
         return -1;
     }
-    printf("Router MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
-           out_RouterMAC[0], out_RouterMAC[1], out_RouterMAC[2],
-           out_RouterMAC[3], out_RouterMAC[4], out_RouterMAC[5]);
+
+
+
 
     return 0;
 }
