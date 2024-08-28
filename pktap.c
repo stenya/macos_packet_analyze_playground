@@ -67,7 +67,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     if (pktapHdr->pth_protocol_family == AF_INET)
         ip4Hdr   = (struct ip *)&data[pktapHdr->pth_frame_pre_length];
     else if (pktapHdr->pth_protocol_family == AF_INET6)
-        ip6Hdr = (const struct ip6_hdr *)&data[pktapHdr->pth_frame_pre_length];    
+        ip6Hdr = (struct ip6_hdr *)&data[pktapHdr->pth_frame_pre_length];    
 
     if (_debug) // LOGGING (DEBUG)
     {        

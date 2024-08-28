@@ -12,60 +12,45 @@
 
 #include "config.h"
 
+#include "inject.c"
+
 unsigned char buffer[sizeof(struct ether_header) + 0xFFFF] = {0};
 
-//#define _USE_BPF_
+
+int                      _handler_inject_type       = INJECT_TYPE_BPF;
+//int                      _handler_inject_type       = INJECT_TYPE_PCAP;
+struct inject_handler   _handler_inject_if_default;
+
+/*
+#define _USE_BPF_
 #ifdef _USE_BPF_
     int     handle_default_if_bpf_fd = 0;
 #else
     pcap_t *handle_default_if_pcap  = NULL;
 #endif
+*/
 
 int injectToDefaultInterface(unsigned char* ipData, unsigned int len);
 
 int classify_openForInjection()
 {    
-#ifdef _USE_BPF_
-    if (bpfOpen(IF_DEFAULT_NAME, &handle_default_if_bpf_fd) != 0) {
+    if (inject_open(_handler_inject_type, IF_DEFAULT_NAME, &_handler_inject_if_default) != 0) {
         fprintf(stderr, "Couldn't open device: %s\n", IF_DEFAULT_NAME);
-        return 1;
+        return -1;
     }
-#else
-    char errbuf[PCAP_ERRBUF_SIZE];
-    handle_default_if_pcap = pcap_open_live(IF_DEFAULT_NAME, BUFSIZ, 0, 0, errbuf);
-    if (handle_default_if_pcap == NULL) {
-        fprintf(stderr, "Couldn't open device: %s\n", errbuf);
-        return 1;
-    }
-#endif
-    return 0; 
+    return 0;
 }
 
 int closeForInjection() {
-#ifdef _USE_BPF_
-    if (handle_default_if_bpf_fd == 0)
-        return 0;
-    bpfClose(handle_default_if_bpf_fd);
-    handle_default_if_bpf_fd = 0;
-#else
-    if (handle_default_if_pcap == NULL)
-        return 0;
-    pcap_close(handle_default_if_pcap);
-    handle_default_if_pcap = NULL;
-#endif
+    if (inject_close(&_handler_inject_if_default) != 0) {
+        fprintf(stderr, "Error closing injection handler\n");
+        return -1;
+    }
     return 0;
 }
 
 int classify_func(const struct pktap_header *pktapHdr, unsigned char* ipData, unsigned int len) 
 {
-#ifdef _USE_BPF_
-    if (handle_default_if_bpf_fd == 0) 
-        return -1;
-#else
-    if (handle_default_if_pcap == NULL) 
-        return -1;
-#endif
-
     if (pktapHdr == NULL || ipData == NULL) 
         return -1;
 
@@ -118,7 +103,7 @@ int classify_func(const struct pktap_header *pktapHdr, unsigned char* ipData, un
     //printf(">>>>>>>>>>>>>>>>>>>>>>>>\n");
 
     int ret = injectToDefaultInterface(ipData, len);
-    //printf("\n");
+
     return ret;
 }
 
@@ -161,19 +146,12 @@ int injectToDefaultInterface(unsigned char* ipData, unsigned int len)
         update_udp_checksum(ip_header, udp_header, payload, payload_len);
     }
 
-#ifdef _USE_BPF_
-    if (bpfInjectPacket(handle_default_if_bpf_fd, buffer, totalLen) != 0) {
+    // Inject the packet
+    int ret = inject_packet(&_handler_inject_if_default, buffer, totalLen);
+    if (ret != 0) {
         fprintf(stderr, "Error injecting packet\n");
     } else {
         //printf("Packet injected successfully\n");
     }
-#else
-    // Inject the packet
-    if (pcap_inject(handle_default_if_pcap, buffer, totalLen) == -1) {
-        pcap_perror(handle_default_if_pcap, "Error injecting packet");
-    } else {
-        //printf("Packet injected successfully\n");
-    }
-#endif
-    return 0;
+    return ret;
 }

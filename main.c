@@ -1,12 +1,7 @@
-//  gcc -o createtun  main.c -lpcap 
-
-//#include "tun.c"
+//  gcc main.c do_bpf.c -lpcap 
 
 #include "pktap.c"
-
-
 #include "classify_out.c"
-
 #include "config.h"
 
 int main() {
@@ -15,7 +10,6 @@ int main() {
         return -1;        
     }
   
-
     pktap_PrepareVPNIfToInjectInFrames(IF_vTUN_NAME, IF_VPN_IP);
 
     classify_openForInjection();
