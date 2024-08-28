@@ -15,6 +15,86 @@
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 
+#define DEFAULT_BUFFER_SIZE 16 * 1024 * 1024
+
+int bpfOpen(const char *interface, int *bpf_fd) {
+    char bpf_device[12];
+    struct ifreq ifr;
+    int i;
+
+    // Find an available BPF device
+    for (i = 0; i < 255; i++) {
+        snprintf(bpf_device, sizeof(bpf_device), "/dev/bpf%d", i);
+        *bpf_fd = open(bpf_device, O_RDWR);
+        if (*bpf_fd != -1) {
+            printf("Using BPF device: %s\n", bpf_device);
+            break;
+        }
+    }
+
+    if (*bpf_fd == -1) {
+        perror("Failed to open BPF device");
+        return -1;
+    }
+
+    // Attach the BPF device to the specified network interface
+    strncpy(ifr.ifr_name, interface, sizeof(ifr.ifr_name));
+    if (ioctl(*bpf_fd, BIOCSETIF, &ifr) == -1) {
+        perror("Failed to set interface");
+        close(*bpf_fd);
+        return -1;
+    }
+
+    // Set buffer size
+    /*
+    int buffer_size = DEFAULT_BUFFER_SIZE;
+    if (ioctl(*bpf_fd, BIOCSBLEN, &buffer_size) == -1) {
+        perror("Failed to set buffer size");
+        close(*bpf_fd);
+        return -1;
+    }*/
+
+    // Set immediate mode
+    int immediate = 1;
+    if (ioctl(*bpf_fd, BIOCIMMEDIATE, &immediate) == -1) {
+        perror("Failed to set immediate mode");
+        close(*bpf_fd);
+        return -1;
+    }
+
+    // Set see-sent mode to false
+    int see_sent = 0;
+    if (ioctl(*bpf_fd, BIOCSSEESENT, &see_sent) == -1) {
+        perror("Failed to set see-sent mode");
+        close(*bpf_fd);
+        return -1;
+    }
+
+    // Set non-blocking mode
+    if (fcntl(*bpf_fd, F_SETFL, O_NONBLOCK) == -1) {
+        perror("Failed to set non-blocking mode");
+        close(*bpf_fd);
+        return -1;
+    }
+
+    return 0;
+}
+
+int bpfInjectPacket(int bpf_fd, const void *packet, size_t packet_len) {
+    if (write(bpf_fd, packet, packet_len) == -1) {
+        perror("Failed to inject packet");
+        return -1;
+    }
+    return 0;
+}
+
+void bpfClose(int bpf_fd) {
+    close(bpf_fd);
+}
+
+
+//  ------------------------ TEST ----------------------
+/*
 #define BPF_BUFFER_LENGTH 4096*1
 
 int DoBpf_TEST() {
@@ -146,48 +226,7 @@ break;
     close(bpf_fd);
     return 0;
 }
+*/
 
-int bpfOpen(const char *interface, int *bpf_fd) {
-    char bpf_device[12];
-    struct ifreq ifr;
-    int i;
-
-    // Find an available BPF device
-    for (i = 0; i < 255; i++) {
-        snprintf(bpf_device, sizeof(bpf_device), "/dev/bpf%d", i);
-        *bpf_fd = open(bpf_device, O_RDWR);
-        if (*bpf_fd != -1) {
-            printf("Using BPF device: %s\n", bpf_device);
-            break;
-        }
-    }
-
-    if (*bpf_fd == -1) {
-        perror("Failed to open BPF device");
-        return -1;
-    }
-
-    // Attach the BPF device to the specified network interface
-    strncpy(ifr.ifr_name, interface, sizeof(ifr.ifr_name));
-    if (ioctl(*bpf_fd, BIOCSETIF, &ifr) == -1) {
-        perror("Failed to set interface");
-        close(*bpf_fd);
-        return -1;
-    }
-
-    return 0;
-}
-
-int bpfInjectPacket(int bpf_fd, const void *packet, size_t packet_len) {
-    if (write(bpf_fd, packet, packet_len) == -1) {
-        perror("Failed to inject packet");
-        return -1;
-    }
-    return 0;
-}
-
-void bpfClose(int bpf_fd) {
-    close(bpf_fd);
-}
 
 #endif //_DO_BPF_C_

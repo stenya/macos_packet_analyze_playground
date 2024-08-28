@@ -154,7 +154,7 @@ int CreateUTUN(const char *ip_address) {
     // Step 2: Prepare the control ID
     memset(&ctl_info, 0, sizeof(ctl_info));
     strncpy(ctl_info.ctl_name, UTUN_CONTROL_NAME, MAX_KCTL_NAME);
-    if (ioctl(sockfd, CTLIOCGINFO, &ctl_info) == -1) {
+    if (ioctl(sockfd, CTLIOCGINFO, &ctl_info) < 0) {
         perror("ioctl");
         close(sockfd);
         return 1;
@@ -168,7 +168,7 @@ int CreateUTUN(const char *ip_address) {
     addr.sc_id = ctl_info.ctl_id;
     addr.sc_unit = 0; // Let the kernel choose the unit number
 
-    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");
         close(sockfd);
         return 1;
@@ -176,7 +176,7 @@ int CreateUTUN(const char *ip_address) {
 
     // Step 4: Get the interface name
     socklen_t ifname_len = sizeof(ifname);
-    if (getsockopt(sockfd, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, ifname, &ifname_len) == -1) {
+    if (getsockopt(sockfd, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, ifname, &ifname_len) < 0) {
         perror("getsockopt");
         close(sockfd);
         return 1;
