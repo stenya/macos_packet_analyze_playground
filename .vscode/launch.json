@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             
-            "stopAtEntry": false,
+            "stopAtEntry": true,
             "cwd": "${workspaceFolder}",
             
             "program": "${workspaceFolder}/b.out",
@@ -17,11 +17,20 @@
 
             "MIMode": "lldb",
             "preLaunchTask": "build",
-            "postDebugTask": "cleanup",
-            "runAsRoot": {
-                "enabled": true,
-                "sudoPrompt": "Enter your password to run the debugger as root"
-            }  
+        },
+        {
+            "name": "Debug TUN",
+            "type": "cppdbg",
+            "request": "launch",
+            
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}",
+            
+            "program": "${workspaceFolder}/tun.out",
+            "args": [],
+
+            "MIMode": "lldb",
+            "preLaunchTask": "build_tun",
         }
     ]
 }

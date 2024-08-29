@@ -1,89 +1,14 @@
-//  gcc -o createtun  main_tun.c  
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <sys/kern_control.h>
-#include <net/if.h>
-#include <net/if_utun.h>
-#include <arpa/inet.h>
-
-#include <netinet/ip.h>
-#include <netinet/ip6.h>
-
-#define UTUN_CONTROL_NAME "com.apple.net.utun_control"
-#define SYSPROTO_CONTROL 2
-#define AF_SYS_CONTROL 2
-
 // Build:
 //  gcc -o createtun  main_tun.c  
 
+#include "tun.c"
 
-#include <netinet/if_ether.h>
-#include <netinet/ip.h>
-#include <net/ethernet.h> 
-/*
-// Function to print MAC address
-void print_mac_address(const uint8_t *mac) {
-    for (int i = 0; i < ETHER_ADDR_LEN; i++) {
-        printf("%02x", mac[i]);
-        if (i < ETHER_ADDR_LEN - 1) {
-            printf(":");
-        }
-    }
-}*/
-
-// Function to print IP address
 void print_ip_address(struct in_addr ip) {
     char ip_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &ip, ip_str, INET_ADDRSTRLEN);
     printf("%s", ip_str);
 }
-/*
-// Function to print Ethernet frame data
-void print_ethernet_frame(const uint8_t *buffer, ssize_t length) {
-    if (length < sizeof(struct ether_header)) {
-        printf("Buffer too small for Ethernet frame\n");
-        return;
-    }
 
-    // Extract and print the Ethernet header
-    const struct ether_header *eth = (const struct ether_header *)buffer;
-    printf("Ethernet Header:\n");
-    printf("  Destination MAC: ");
-    print_mac_address(eth->ether_dhost);
-    printf("\n  Source MAC: ");
-    print_mac_address(eth->ether_shost);
-    printf("\n  Ethertype: 0x%04x\n", ntohs(eth->ether_type));
-
-    // Check if the Ethertype indicates an IP packet
-    if (ntohs(eth->ether_type) == ETHERTYPE_IP) {
-        if (length < sizeof(struct ether_header) + sizeof(struct ip)) {
-            printf("Buffer too small for IP packet\n");
-            return;
-        }
-
-        // Extract and print the IP header
-        const struct ip *ip_hdr = (const struct ip *)(buffer + sizeof(struct ether_header));
-        printf("\nIP Header:\n");
-        printf("  Source IP: ");
-        print_ip_address(ip_hdr->ip_src);
-        printf("\n  Destination IP: ");
-        print_ip_address(ip_hdr->ip_dst);
-        printf("\n");
-    }
-
-    // Print the remaining data
-    printf("Data: ");
-    for (ssize_t i = sizeof(struct ether_header); i < length; i++) {
-        printf("%02x ", buffer[i]);
-    }
-    printf("\n");
-}
-*/
 void print_ip_frame(const uint8_t *buffer, ssize_t length) 
 {   
     if (length <= 4)
@@ -126,133 +51,39 @@ void print_ip_frame(const uint8_t *buffer, ssize_t length)
     printf("\n");
 }
 
-// -----------------------------------------------------------
-    int sockfd;
-// -----------------------------------------------------------
-volatile sig_atomic_t stop = 0;
+struct tun_handler tunHdlr;
+
 void handle_signal(int signal) {
-    stop = 1;
-    close(sockfd);
+    printf("Signal %d received\n", signal);
+    tun_thread_stop(&tunHdlr);
+    printf("Signal %d sent\n", signal);
 }
 
-// -----------------------------------------------------------
+int main(int argc, char *argv[]) {
 
-int CreateUTUN(const char *ip_address) {
+    char* default_IP = "10.88.88.89";
+    char* tun_ip = default_IP;
+    if (argc >= 2) 
+        tun_ip = argv[1];
 
-    struct sockaddr_ctl addr;
-    struct ctl_info ctl_info;
-    char ifname[IFNAMSIZ];
-    struct ifreq ifr;
+    memset(&tunHdlr, 0, sizeof(tunHdlr));
 
-    // Step 1: Create a socket
-    sockfd = socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
-    if (sockfd < 0) {
-        perror("socket");
+    tunHdlr.cfg_ip = tun_ip;
+    tunHdlr.onDataReceived = print_ip_frame;
+
+    if (tun_thread_run(&tunHdlr)!=0) {
+        printf("Error creating TUN interface\n");
         return 1;
     }
 
-    // Step 2: Prepare the control ID
-    memset(&ctl_info, 0, sizeof(ctl_info));
-    strncpy(ctl_info.ctl_name, UTUN_CONTROL_NAME, MAX_KCTL_NAME);
-    if (ioctl(sockfd, CTLIOCGINFO, &ctl_info) < 0) {
-        perror("ioctl");
-        close(sockfd);
-        return 1;
-    }
-
-    // Step 3: Bind the socket
-    memset(&addr, 0, sizeof(addr));
-    addr.sc_len = sizeof(addr);
-    addr.sc_family = AF_SYSTEM;
-    addr.ss_sysaddr = AF_SYS_CONTROL;
-    addr.sc_id = ctl_info.ctl_id;
-    addr.sc_unit = 0; // Let the kernel choose the unit number
-
-    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("connect");
-        close(sockfd);
-        return 1;
-    }
-
-    // Step 4: Get the interface name
-    socklen_t ifname_len = sizeof(ifname);
-    if (getsockopt(sockfd, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, ifname, &ifname_len) < 0) {
-        perror("getsockopt");
-        close(sockfd);
-        return 1;
-    }
-
-    printf("Created utun interface: %s\n", ifname);
-
-    // Step 5: Configure the interface (example: set IP address)
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
-        perror("socket");
-        close(sockfd);
-        return 1;
-    }
-
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-
-    struct sockaddr_in *addr_in = (struct sockaddr_in *)&ifr.ifr_addr;
-    addr_in->sin_family = AF_INET;
-    inet_pton(AF_INET, ip_address, &addr_in->sin_addr);
-
-    if (ioctl(fd, SIOCSIFADDR, &ifr) == -1) {
-        perror("ioctl");
-        close(fd);
-        close(sockfd);
-        return 1;
-    }
-
-    printf("Assigned IP address to %s\n", ifname);
-    close(fd);
-
-    //printf("Press any key to exit...\n");
-    //getchar();
+    printf("TUN interface started\n");
 
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
-    char buffer[4096];
-    ssize_t nbytes;
+    printf("Waiting for stop...\n");
+    int ret = tun_thread_wait(&tunHdlr);
+    printf("TUN interface closed. Return code: %d\n", ret);
 
-    printf("[!] Listening for data on %s...\n", ifname);
-    while (!stop) {
-        nbytes = read(sockfd, buffer, sizeof(buffer));
-        if (nbytes < 0) {
-            perror("read");
-            close(sockfd);
-            return 1;
-        }
-
-        print_ip_frame((const uint8_t *)buffer, nbytes);
-        //print_ethernet_frame((const uint8_t *)buffer, nbytes);
-        /*
-        printf("Received %zd bytes: ", nbytes);
-        for (ssize_t i = 0; i < nbytes; i++) {
-            printf("%02x ", (unsigned char)buffer[i]);
-        }
-        printf("\n");
-        //*/
-    }
-
-
-    // Keep the socket open if you intend to use it to send/receive packets.
-    // For demonstration, we just close it here.
-    close(sockfd);
-    return 0;
-}
-
-int main(int argc, char *argv[]) {
-    char* default_IP = "10.88.88.89";
-    char *ip = default_IP;
-
-    if (argc >= 2) 
-        ip = argv[1];
-
-    printf("Start ... (assign device IP: %s)\n", ip);
-
-    return CreateUTUN(ip);
+    return ret;
 }

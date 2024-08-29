@@ -20,6 +20,8 @@
         "vector": "c",
         "cstring": "c",
         "ip6.h": "c",
-        "config.h": "c"
+        "config.h": "c",
+        "_pthread_types.h": "c",
+        "stdio.h": "c"
     }
 }
