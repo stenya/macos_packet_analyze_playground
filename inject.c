@@ -10,11 +10,11 @@ struct inject_handler
     pcap_t *pcap_handle;
 };
 
-int inject_open(int inject_type, const char* ifName, struct inject_handler* handler) {
+int inject_open(int inject_type, const char* ifName, struct inject_handler* handler, void (*bpfOnInPacket)(unsigned char* ip4_header), int bpfIsTun) {
     memset(handler, 0, sizeof(struct inject_handler));
 
     if (inject_type == INJECT_TYPE_BPF) {
-        if (bpfOpen(ifName, &handler->bpf_fd) != 0) {
+        if (bpfOpen(ifName, &handler->bpf_fd, bpfOnInPacket, bpfIsTun) != 0) {
             fprintf(stderr, "Couldn't open device: %s\n", ifName);
             return -1;
         }

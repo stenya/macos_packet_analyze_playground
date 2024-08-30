@@ -1,4 +1,4 @@
-//  gcc main.c bpf.c -lpcap 
+//  gcc main.c bpf.c tun.c -lpcap 
 
 #include "pktap.c"
 #include "classify.c"
@@ -10,6 +10,6 @@ int main() {
         return -1;
     }
   
-    classify_openForInjection();
-    return do_pktap_read_vTun(classify_func); // OK
+    classify_INIT();
+    return do_pktap_read_vTun(on_PKTAP_packet); // OK
 }

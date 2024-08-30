@@ -1,6 +1,10 @@
 #ifndef _DO_BPF_C_
 #define _DO_BPF_C_
 
+#include "bpf.h"
+
+#include <pthread.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,9 +19,19 @@
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 
-#define DEFAULT_BUFFER_SIZE 16 * 1024 * 1024
+#include <errno.h> 
 
-int bpfOpen(const char *interface, int *bpf_fd) {
+#define BPF_BUFFER_LENGTH 1024*4 
+
+void* bpf_read_thread(void *bpf_fd);
+
+struct bpf_dev_handler {
+    int bpf_fd;
+    void (*onDataReceived)(unsigned char* ip4_header);
+    int isTunInterface;
+}; 
+
+int bpfOpen(const char *interface, int *bpf_fd, void (*onDataReceived)(unsigned char* ip4_header), int isTunInterface) {
     char bpf_device[12];
     struct ifreq ifr;
     int i;
@@ -77,15 +91,25 @@ int bpfOpen(const char *interface, int *bpf_fd) {
         return -1;
     }
 
+    // Create the thread
+    if (onDataReceived) {
+        struct bpf_dev_handler* hdlr = (struct bpf_dev_handler*)malloc(sizeof(struct bpf_dev_handler));
+        hdlr->bpf_fd = *bpf_fd;
+        hdlr->onDataReceived = onDataReceived;
+        hdlr->isTunInterface = isTunInterface;
+
+        printf("Creating BPF reader thread\n");
+        pthread_t   thread;
+        if (pthread_create(&thread, NULL, bpf_read_thread, hdlr) != 0) {
+            perror("Failed to create thread");
+            return -1;
+        }    
+    }
     return 0;
 }
 
-int bpfInjectPacket(int bpf_fd, const void *packet, size_t packet_len) {
-    if (write(bpf_fd, packet, packet_len) == -1) {
-        perror("Failed to inject packet");
-        return -1;
-    }
-    return 0;
+ssize_t bpfWrite(int bpf_fd, const void *packet, size_t packet_len) {
+    return write(bpf_fd, packet, packet_len);    
 }
 
 void bpfClose(int bpf_fd) {
@@ -93,140 +117,86 @@ void bpfClose(int bpf_fd) {
 }
 
 
-//  ------------------------ TEST ----------------------
-/*
-#define BPF_BUFFER_LENGTH 4096*1
+void* bpf_read_thread(void *arg) {
+    struct bpf_dev_handler* hdlr = (struct bpf_dev_handler*)arg;
 
-int DoBpf_TEST() {
-    int bpf_fd;
-    int i;
-    char bpf_device[12];
-    char buffer[BPF_BUFFER_LENGTH];
-    struct ifreq ifr;
-    struct bpf_program filter;
-    struct bpf_hdr *bpf_header;
-    struct ether_header *eth_header;
-    struct ip *ip_header;
-    char *packet;
-    ssize_t length;
-    u_int packet_len;
-
-    struct bpf_insn instructions[] = {
-        // Capture all packets
-        BPF_STMT(BPF_RET | BPF_K, (u_int)-1)
-    };
-
-    // Find an available BPF device
-    for (i = 0; i < 255; i++) {
-        snprintf(bpf_device, sizeof(bpf_device), "/dev/bpf%d", i);
-        bpf_fd = open(bpf_device, O_RDWR);
-        if (bpf_fd != -1) {
-            printf("Using BPF device: %s\n", bpf_device);
-            break;
-        }
-    }
-
-    if (bpf_fd == -1) {
-        perror("Failed to open BPF device");
-        return 1;
-    }
-
-    // Attach the BPF device to the default network interface
-    strncpy(ifr.ifr_name, "en0", sizeof(ifr.ifr_name)); // "en0" is typically the default interface
-    //strncpy(ifr.ifr_name, "utun5", sizeof(ifr.ifr_name)); // "en0" is typically the default interface
-    if (ioctl(bpf_fd, BIOCSETIF, &ifr) == -1) {
-        perror("Failed to set interface");
-        close(bpf_fd);
-        return 1;
-    }
-
-    // Set the BPF filter (optional, here it captures all packets)
-    filter.bf_len = sizeof(instructions) / sizeof(struct bpf_insn);
-    filter.bf_insns = instructions;
-    if (ioctl(bpf_fd, BIOCSETF, &filter) == -1) {
-        perror("Failed to set BPF filter");
-        close(bpf_fd);
-        return 1;
-    }
-
-    // Set immediate mode (optional, reduces latency)
-    int immediate = 1;
-    if (ioctl(bpf_fd, BIOCIMMEDIATE, &immediate) == -1) {
-        perror("Failed to set immediate mode");
-        close(bpf_fd);
-        return 1;
-    }
-
+    printf("BPF reader thread started\n");
+        
     // Read packets from the BPF device
-    while (1) {
-        length = read(bpf_fd, buffer, BPF_BUFFER_LENGTH);
-        if (length == -1) {
-            perror("Failed to read from BPF device");
-            break;
+    char buffer[BPF_BUFFER_LENGTH] = {0};
+
+    int exit = 0;
+    while (!exit)
+    {        
+        ssize_t length;
+        while (1) {
+            length = read(hdlr->bpf_fd, buffer, BPF_BUFFER_LENGTH);
+            if (length == -1) {
+                if (errno == EINTR) {
+                    continue; // Retry if interrupted by a signal
+                } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // Resource temporarily unavailable, wait and retry
+                    usleep(1000); // Sleep for 1 millisecond
+                    continue;
+                } else {
+                    perror("Failed to read from BPF device");
+                    exit = 1;
+                    break;
+                }
+            }
+            break; // Successfully read data
         }
+        if (exit) 
+            break;
 
-        // Process each packet in the buffer
-        packet = buffer;
-        while (packet < buffer + length) {
-            bpf_header = (struct bpf_hdr *)packet;
-            packet_len = bpf_header->bh_caplen;
-            packet += bpf_header->bh_hdrlen;
+        int offset = 0;
+        while (offset <  length) {
+            struct bpf_hdr *bpf_header = (struct bpf_hdr *)(buffer + offset);
+            u_char *packet_data = (u_char *)(buffer + offset + bpf_header->bh_hdrlen);
 
-            printf("Captured %u bytes\n", packet_len);
-
-            if (bpf_header->bh_caplen != bpf_header->bh_datalen) {
-                printf("Packet was truncated\n");
-                continue;
+            // Move to the next packet in the buffer
+            offset += BPF_WORDALIGN(bpf_header->bh_hdrlen + bpf_header->bh_caplen);
+            
+            // AF_INET???
+            if (bpf_header->bh_caplen < bpf_header->bh_datalen) {
+                printf("Packet truncated\n");
+                break;
             }
 
             // Parse Ethernet header
-            eth_header = (struct ether_header *)packet;
-            printf("Ethernet Header: \n");
-            printf("\tSource MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                   eth_header->ether_shost[0], eth_header->ether_shost[1],
-                   eth_header->ether_shost[2], eth_header->ether_shost[3],
-                   eth_header->ether_shost[4], eth_header->ether_shost[5]);
-            printf("\tDestination MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                   eth_header->ether_dhost[0], eth_header->ether_dhost[1],
-                   eth_header->ether_dhost[2], eth_header->ether_dhost[3],
-                   eth_header->ether_dhost[4], eth_header->ether_dhost[5]);
-
-            // Check if the packet is IP
-            if (ntohs(eth_header->ether_type) == ETHERTYPE_IP) {
-                ip_header = (struct ip *)(packet + sizeof(struct ether_header));
-                char src_ip[INET_ADDRSTRLEN];
-                char dst_ip[INET_ADDRSTRLEN];
-
-                inet_ntop(AF_INET, &(ip_header->ip_src), src_ip, INET_ADDRSTRLEN);
-                inet_ntop(AF_INET, &(ip_header->ip_dst), dst_ip, INET_ADDRSTRLEN);
-
-                printf("IP Header: \n");
-                printf("\tSource IP: %s\n", src_ip);
-                printf("\tDestination IP: %s\n", dst_ip);
-                printf("\tProtocol: %d\n", ip_header->ip_p);
+            if (hdlr->isTunInterface) {
+                // For TUN/TAP interfaces, data starts with "02 00 00 00" (AF_INET)
+                // and the Ethernet header is not present.
+                // We should check the first 4 bytes and skip the Ethernet header if not present.
+                
+                //uint32_t protocol_family = ntohl(*(uint32_t *)packet_data);
+                //if (protocol_family != AF_INET) // IPv4
+                //   continue;
+                uint32_t protocol_family = *(uint32_t *)packet_data;
+                if (protocol_family != AF_INET) // IPv4
+                   continue;
+                
+                struct ip *ip_header = (struct ip *)(packet_data + 4);
+                if (hdlr->onDataReceived)
+                    hdlr->onDataReceived((unsigned char*) ip_header);     
+            } else {
+                struct ether_header *eth_header = (struct ether_header *)packet_data;
+                int ethType = ntohs(eth_header->ether_type);   
+                if (ethType != ETHERTYPE_IP) // TODO: ETHERTYPE_IPV6
+                {
+                    continue;
+                }
+                struct ip *ip_header = (struct ip *)(packet_data + sizeof(struct ether_header));
+                if (hdlr->onDataReceived)
+                    hdlr->onDataReceived((unsigned char*) ip_header);
             }
-
-            printf("\n");
-break;
-            //char* oldPacket = packet;
-            
-            //printf("BPF_WORDALIGN:%ld\n", BPF_WORDALIGN(bpf_header->bh_caplen + bpf_header->bh_hdrlen));
-
-            // Move to the next packet
-            //packet += BPF_WORDALIGN(packet_len);
-
-            //packet += BPF_WORDALIGN(bpf_header->bh_caplen + bpf_header->bh_hdrlen);
-            packet += ip_header->ip_len;
-            // bpf_header->bh_caplen + bpf_header->bh_hdrlen;
-
-            //printf("DIFF: %ld (BPF_WORDALIGN:%ld)", packet - oldPacket, BPF_WORDALIGN(packet_len));
         }
+    
     }
 
-    close(bpf_fd);
-    return 0;
+    free(hdlr);
+    return NULL;
 }
-*/
 
 
 #endif //_DO_BPF_C_

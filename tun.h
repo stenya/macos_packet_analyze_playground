@@ -15,7 +15,6 @@ struct tun_handler{
     char        ifname[IFNAMSIZ]; // Name of the TUN interface; Initialized by tun_thread_run
 
     // Internal data    
-    pthread_mutex_t sock_fd_mutex;
     int         sock_fd;    // File descriptor for the TUN interface; Initialized by tun_thread_run
     pthread_t   thread;     // Thread ID; Initialized by tun_thread_run
     int         init_done; // >0 if an error occurred during initialization

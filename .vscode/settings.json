@@ -22,6 +22,10 @@
         "ip6.h": "c",
         "config.h": "c",
         "_pthread_types.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "__locale": "c",
+        "bpf.h": "c",
+        "errno.h": "c",
+        "print_frame_helpers.h": "c"
     }
 }

@@ -18,7 +18,7 @@ const char*     IF_VPN_NAME     = "utun5";
 const char*     IF_VPN_IP_STR   = "172.26.169.112";
 struct in_addr  IF_VPN_IP;
 
-const char*     IF_vTUN_NAME    = "utun4";
+const char*     IF_VTUN_IP_STR   = "10.88.88.89";
 
 int config_init() {
     // Get default configuration parameters:
@@ -51,7 +51,7 @@ int config_init() {
         IF_DEFAULT_NAME, inet_ntoa(IF_DEFAULT_IP));
 
     printf("VPN IF            : %s (%s)\n", IF_VPN_NAME, inet_ntoa(IF_VPN_IP));
-    printf("TUN Virtual       : %s\n", IF_vTUN_NAME);
+    //printf("TUN Virtual       : %s\n", IF_vTUN_NAME);
 
 
     return 0;

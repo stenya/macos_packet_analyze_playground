@@ -52,8 +52,6 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
         initDoneWithError(hdlr, "bad argument");
         return 1;
     }
-    
-    pthread_mutex_init(&hdlr->sock_fd_mutex, NULL);
 
     struct sockaddr_ctl addr;
     struct ctl_info ctl_info;
@@ -129,9 +127,7 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
 
     printf("[!] Listening for data on %s...\n", hdlr->ifname);
     while (hdlr->sock_fd>=0) {
-        pthread_mutex_lock(&hdlr->sock_fd_mutex);
         nbytes = read(hdlr->sock_fd, buffer, sizeof(buffer));
-        pthread_mutex_unlock(&hdlr->sock_fd_mutex);
         if (nbytes < 0) {
             perror("read");
             break;
@@ -173,19 +169,6 @@ int tun_thread_run(struct tun_handler* hdlr) {
     return 0;
 }
 
-ssize_t tun_write(struct tun_handler* hdlr, const void *buffer, size_t buffer_len) {
-    ssize_t bytes_written;
-    
-    pthread_mutex_lock(&hdlr->sock_fd_mutex);
-    bytes_written = write(hdlr->sock_fd, buffer, buffer_len);
-    pthread_mutex_unlock(&hdlr->sock_fd_mutex);
-
-    if (bytes_written == -1) {
-        perror("Write error");
-    }
-    return bytes_written;
-}
-
 int tun_thread_wait(struct tun_handler* hdlr) {
     void *thread_result;
 
@@ -205,4 +188,14 @@ int tun_thread_stop(struct tun_handler* hdlr) {
     int ret = close(hdlr->sock_fd);
     hdlr->sock_fd = 0;
     return ret;
+}
+
+ssize_t tun_write(struct tun_handler* hdlr, const void *buffer, size_t buffer_len) {
+    ssize_t bytes_written;
+    
+    bytes_written = write(hdlr->sock_fd, buffer, buffer_len);
+    if (bytes_written == -1) {
+        perror("Write error");
+    }
+    return bytes_written;
 }

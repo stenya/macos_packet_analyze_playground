@@ -46,7 +46,9 @@ void print_ip_frame(const uint8_t *buffer, ssize_t length)
         for (ssize_t i = sizeof(struct ip6_hdr); i < length; i++) {
             printf("%02x ", buffer[i]);
         }
-    } else printf("Unknown protocol\n");
+    } else {
+        printf("Unknown protocol\n");
+    }
 
     printf("\n");
 }

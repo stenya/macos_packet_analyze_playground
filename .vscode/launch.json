@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             
-            "stopAtEntry": true,
+            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             
             "program": "${workspaceFolder}/b.out",
@@ -31,6 +31,20 @@
 
             "MIMode": "lldb",
             "preLaunchTask": "build_tun",
+        },
+        {
+            "name": "Debug BPF",
+            "type": "cppdbg",
+            "request": "launch",
+            
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}",
+            
+            "program": "${workspaceFolder}/bpf.out",
+            "args": [],
+
+            "MIMode": "lldb",
+            "preLaunchTask": "build_bpf",
         }
     ]
 }

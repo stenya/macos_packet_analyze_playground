@@ -106,11 +106,12 @@ int get_addresses(
     char*           out_DefIfIPv4,    // char[INET_ADDRSTRLEN]    16
     unsigned char*  out_RouterMAC     // char[ETHER_ADDR_LEN]     6
 ) {
+    strncpy(out_DefIfName, "en0", IFNAMSIZ);
     // Get default interface name
-    if (get_default_interface(out_DefIfName, sizeof(IFNAMSIZ)) != 0) {
-        printf("Failed to get default interface\n");
-        return -1;
-    }  
+    //if (get_default_interface(out_DefIfName, sizeof(IFNAMSIZ)) != 0) {
+    //    printf("Failed to get default interface\n");
+    //    return -1;
+    //}  
 
     // Get IP address of default interface
     if (get_ip_address(out_DefIfName, out_DefIfIPv4, INET_ADDRSTRLEN) != 0) {
@@ -130,9 +131,6 @@ int get_addresses(
         printf("Failed to get router MAC address\n");
         return -1;
     }
-
-
-
 
     return 0;
 }

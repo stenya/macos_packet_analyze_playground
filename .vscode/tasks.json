@@ -9,6 +9,7 @@
                 "-g",
                 "${workspaceFolder}/main.c",
                 "${workspaceFolder}/bpf.c",
+                "${workspaceFolder}/tun.c",
                 "-o",
                 "${workspaceFolder}/b.out",
                 "-lpcap"
@@ -35,6 +36,25 @@
                 "${workspaceFolder}/main_tun.c",
                 "-o",
                 "${workspaceFolder}/tun.out",
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+        },
+        {
+            "label": "build_bpf",
+            "type": "cppbuild",
+            "command": "/usr/bin/gcc",
+            "args": [
+                "-fdiagnostics-color=always",
+                "-g",
+                "${workspaceFolder}/main_bpf.c",
+                "${workspaceFolder}/bpf.c",
+                "-o",
+                "${workspaceFolder}/bpf.out",
             ],
             "options": {
                 "cwd": "${fileDirname}"
