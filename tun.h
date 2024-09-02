@@ -8,8 +8,11 @@ typedef void (*fn_on_data)(const uint8_t *buffer, ssize_t length);
 
 struct tun_handler{
     // Configuration
-    char*       cfg_ip;         // Configuration: IP address to assign to the interface
-    fn_on_data  onDataReceived; // "data received" event handler
+    char*       cfg_ip;             // Configuration: IP address to assign to the interface
+    char*       cfg_dst_ptp_ip;     // Configuration: Destination point-to-point IP address
+    char*       cfg_subnet_mask;    // Configuration: Subnet mask
+
+    fn_on_data  onDataReceived;     // "data received" event handler
 
     // Info about the initialised interface
     char        ifname[IFNAMSIZ]; // Name of the TUN interface; Initialized by tun_thread_run
@@ -17,7 +20,7 @@ struct tun_handler{
     // Internal data    
     int         sock_fd;    // File descriptor for the TUN interface; Initialized by tun_thread_run
     pthread_t   thread;     // Thread ID; Initialized by tun_thread_run
-    int         init_done; // >0 if an error occurred during initialization
+    int         init_done;  // >0 if an error occurred during initialization
 };
 
 // Initialize UTUN interface and start the reader thread

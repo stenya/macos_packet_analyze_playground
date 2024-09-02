@@ -94,7 +94,12 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
     printf("Created utun interface: %s\n", hdlr->ifname);
 
     // Step 5: Configure the interface (example: set IP address)
-    if (hdlr && hdlr->cfg_ip != NULL) {
+    if (hdlr 
+            && 
+            (hdlr->cfg_ip != NULL
+            || hdlr->cfg_dst_ptp_ip != NULL
+            || hdlr->cfg_subnet_mask != NULL)
+        ) {
         int fd_config = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd_config < 0) {
             initDoneWithError(hdlr, "socket");
@@ -103,15 +108,37 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
 
         memset(&ifr, 0, sizeof(ifr));
         strncpy(ifr.ifr_name, hdlr->ifname, IFNAMSIZ);
-
         struct sockaddr_in *addr_in = (struct sockaddr_in *)&ifr.ifr_addr;
         addr_in->sin_family = AF_INET;
-        inet_pton(AF_INET, hdlr->cfg_ip, &addr_in->sin_addr);
 
-        if (ioctl(fd_config, SIOCSIFADDR, &ifr) == -1) {
-            close(fd_config);
-            initDoneWithError(hdlr, "ioctl");
-            return 1;
+        // Set the IP address
+        if (hdlr->cfg_ip != NULL) {            
+            inet_pton(AF_INET, hdlr->cfg_ip, &addr_in->sin_addr);
+            if (ioctl(fd_config, SIOCSIFADDR, &ifr) == -1) {
+                close(fd_config);
+                initDoneWithError(hdlr, "ioctl SIOCSIFADDR");
+                return 1;
+            }
+        }
+    
+        // Set the destination address (point-to-point)
+        if (hdlr->cfg_dst_ptp_ip != NULL) {            
+            inet_pton(AF_INET, hdlr->cfg_dst_ptp_ip, &addr_in->sin_addr);
+            if (ioctl(fd_config, SIOCSIFDSTADDR, &ifr) == -1) {
+                close(fd_config);
+                initDoneWithError(hdlr, "ioctl SIOCSIFDSTADDR");
+                return 1;
+            }
+        }
+
+        // Set the subnet mask
+        if (hdlr->cfg_subnet_mask != NULL) {
+            inet_pton(AF_INET, hdlr->cfg_subnet_mask, &addr_in->sin_addr);
+            if (ioctl(fd_config, SIOCSIFNETMASK, &ifr) == -1) {
+                close(fd_config);
+                initDoneWithError(hdlr, "ioctl SIOCSIFNETMASK");
+                return 1;
+            }
         }
 
         close(fd_config);
@@ -119,7 +146,8 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
     }
 
     hdlr->init_done = 1; // release tun_thread_run(). hdlr->sock_fd and hdlr->ifname are initialised 
-
+    
+    //*
     char buffer[4096];  // TODO: size to use?
     ssize_t nbytes;
 
@@ -141,6 +169,7 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
         close(hdlr->sock_fd);
         hdlr->sock_fd = -1;
     }
+    //*/
     return 0;
 }
 

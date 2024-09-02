@@ -68,6 +68,9 @@ int classify_INIT()
     //
     memset(&_virtualTunIf, 0, sizeof(struct tun_handler));
     _virtualTunIf.cfg_ip = (char*)IF_VTUN_IP_STR;
+    _virtualTunIf.cfg_dst_ptp_ip = (char*)IF_VTUN_PTP_IP_STR;
+    _virtualTunIf.cfg_subnet_mask = (char*)IF_VTUN_MASK_STR;
+
     if (tun_thread_run(&_virtualTunIf)!=0) {
         fprintf(stderr, "Error opening TUN interface\n");
         return -1;
@@ -128,21 +131,24 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
         return 0;
     }
 
+    int DO_SPLIT = 0;
+
     //
     // TEST: 
     // Connection to "34.117.59.81" and "1.1.1.1" send over default interface
     //
-    if (strcmp(inet_ntoa(ip4Hdr->ip_dst), "34.117.59.81")==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), "1.1.1.1")==0) {
+    DO_SPLIT = strcmp(inet_ntoa(ip4Hdr->ip_dst), "34.117.59.81")==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), "1.1.1.1")==0;
+
+    if (DO_SPLIT) {
         size_t totalLen;
         unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, 
             &IF_DEFAULT_IP, NULL, 
             IF_DEFAULT_MAC, ROUTER_MAC);
+
         if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
             fprintf(stderr, "Error preparing data to inject UTUN\n");
             return -1;
-        }
-        //printf("    OUT: VPN->DEF:\n");
-        //print_ip_4((struct ip*) &buff[4], "    ");
+        }        
         ssize_t sent = bpfWrite(_hdlr_DEF_bpf, buff, totalLen);
         if (sent != totalLen) {
             fprintf(stderr, "Error injecting to UTUN\n");
