@@ -13,13 +13,6 @@
 #include "config.h"
 #include "tun.h"
 
-// Possible types of injection handlers: INJECT_TYPE_PCAP, INJECT_TYPE_BPF
-//int                     _hdlr_inject_IF_DEF_type       = INJECT_TYPE_BPF;
-//struct inject_handler   _hdlr_inject_IF_DEF;
-
-//int                     _hdlr_inject_IF_VPN_type       = INJECT_TYPE_PCAP;
-//struct inject_handler   _hdlr_inject_IF_VPN;
-
 int                     _hdlr_DEF_bpf           = -1; // for OUT:VPN->vTUN->DEF and IN:DEF-> (VPN/vTUN ???) 
 int                     _hdlr_VPN_injectOUT_bpf = -1; // for OUT:VPN->vTUN->VPN
 
@@ -35,16 +28,17 @@ void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
     struct ip* ip4Hdr = (struct ip*)ip4_header;
         
     //
-    // Forward all incoming packets fron default interface to VirtualTunnel 
+    // Forward all incoming packets from default interface to VirtualTunnel 
     // TODO: SKIP IP ADDRESS OF VPN SERVER ???
     //
 
     // TEST: SKIP IP ADDRESS OF VPN SERVER ???
-    if (strcmp(inet_ntoa(ip4Hdr->ip_src), "146.70.78.75")==0 )
+    if (strcmp(inet_ntoa(ip4Hdr->ip_src), VPN_SERVER_IP_STR)==0 )
         return;
 
-    print_ip_4(ip4Hdr, "");
+    print_ip_4(ip4Hdr, "IN (def) = ");
 
+    //*
     size_t totalLen;
     unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, NULL, &IF_VPN_IP, NULL, NULL);
     if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
@@ -52,11 +46,31 @@ void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
         return;
     }
 
+    print_ip_4((const struct ip *)&buff[4], "           ---> ");
+
     ssize_t sent = tun_write(&_virtualTunIf, buff, totalLen);
     if (sent != totalLen) {
         fprintf(stderr, "Error injecting to UTUN\n");
         return;
     }
+    //*/
+
+    /*
+    // TEST <<<<<
+    // Forward all incoming data (on default interface) to VPN interface
+    size_t totalLen;
+    unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, NULL, &IF_VPN_IP, NULL, NULL);
+    if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
+        fprintf(stderr, "Error preparing data to inject UTUN\n");
+        return;
+    }
+    ssize_t sent = bpfWrite(_hdlr_VPN_injectOUT_bpf, buff, totalLen);
+    if (sent != totalLen) {
+        perror("Error injecting to VPN\n");
+        return;
+    }
+    // TEST >>>>>
+    //*/
 }
 
 int classify_INIT()
@@ -87,9 +101,11 @@ int classify_INIT()
     }
     printf("'%s' opened\n", OUT_IF_NAME);
 
+    //
     // Print message and wait for Enter
     printf("PAUSE. Connect VPN and press Enter to continue...\n");
     //getchar();
+    //
 
     //
     // Open VPN interface for injection OUT packets
@@ -146,12 +162,12 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
             IF_DEFAULT_MAC, ROUTER_MAC);
 
         if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
-            fprintf(stderr, "Error preparing data to inject UTUN\n");
+            perror("Error preparing data to inject UTUN\n");
             return -1;
         }        
         ssize_t sent = bpfWrite(_hdlr_DEF_bpf, buff, totalLen);
         if (sent != totalLen) {
-            fprintf(stderr, "Error injecting to UTUN\n");
+            perror("Error injecting to UTUN\n");
             return -1;
         }
         return 0;
@@ -162,7 +178,7 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
     //
     ssize_t sent = bpfWrite(_hdlr_VPN_injectOUT_bpf, ip4Hdr, ntohs(ip4Hdr->ip_len));
     if (sent != ntohs(ip4Hdr->ip_len)) {
-        fprintf(stderr, "Error injecting to VPN\n");
+        perror("Error injecting to VPN\n");
         return -1;
     }
    

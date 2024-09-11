@@ -14,13 +14,17 @@ unsigned char   IF_DEFAULT_MAC[ETHER_ADDR_LEN]      = {0};
 
 unsigned char   ROUTER_MAC[ETHER_ADDR_LEN]          = {0};
 
-const char*     IF_VPN_NAME     = "utun5";
-const char*     IF_VPN_IP_STR   = "172.26.169.112";
+const char*     IF_VPN_NAME         = "utun5";          // !!!
+const char*     IF_VPN_IP_STR       = "172.16.203.231";   // !!!
 struct in_addr  IF_VPN_IP;
 
-const char*     IF_VTUN_IP_STR      = "172.123.123.123";
+const char*     VPN_SERVER_IP_STR   = "146.70.78.75";   // !!!
+
+const char*     IF_VTUN_IP_STR      = "172.16.123.123";
 const char*     IF_VTUN_PTP_IP_STR  = "172.0.0.255";
 const char*     IF_VTUN_MASK_STR    = "255.0.0.0";
+
+
 
 int config_init() {
     // Get default configuration parameters:
