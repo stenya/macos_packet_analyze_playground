@@ -22,7 +22,6 @@
 #include <netinet/ip6.h>
 #include <netinet/if_ether.h>
 
-
 #define UTUN_CONTROL_NAME "com.apple.net.utun_control"
 #define SYSPROTO_CONTROL 2
 #define AF_SYS_CONTROL 2
@@ -34,7 +33,6 @@ void sleep_ms(int milliseconds) {
     ts.tv_nsec = (milliseconds % 1000) * 1000000;
     nanosleep(&ts, NULL);
 }
-
 
 void initDoneWithError(struct tun_handler* hdlr, const char* msg) {
     perror(msg);
@@ -147,8 +145,10 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
 
     hdlr->init_done = 1; // release tun_thread_run(). hdlr->sock_fd and hdlr->ifname are initialised 
     
-    //*
-    char buffer[4096];  // TODO: size to use?
+    const int buffsize = 8 * 1024 * 1024;
+    char* buffer = malloc(buffsize);
+    memset(buffer, 0, buffsize);
+
     ssize_t nbytes;
 
     fn_on_data  funcDataReceived = hdlr->onDataReceived;
@@ -169,7 +169,7 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
         close(hdlr->sock_fd);
         hdlr->sock_fd = -1;
     }
-    //*/
+    free(buffer);
     return 0;
 }
 

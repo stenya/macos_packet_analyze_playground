@@ -26,19 +26,27 @@ unsigned char*  prepare_data_to_inject(
 
 void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
     struct ip* ip4Hdr = (struct ip*)ip4_header;
-        
+
+    print_ip_4((const struct ip*)ip4Hdr, "EN0:  ");
+
     //
     // Forward all incoming packets from default interface to VirtualTunnel 
-    // TODO: SKIP IP ADDRESS OF VPN SERVER ???
     //
 
     // TEST: SKIP IP ADDRESS OF VPN SERVER ???
-    if (strcmp(inet_ntoa(ip4Hdr->ip_src), VPN_SERVER_IP_STR)==0 )
+    //if (strcmp(inet_ntoa(ip4Hdr->ip_src), VPN_SERVER_IP_STR)==0 )
+    //    return;
+    // Drop attempt to send packets to tun IP on the real interface
+     if (strcmp(inet_ntoa(ip4Hdr->ip_src), IF_VPN_IP_STR)==0 )
         return;
 
-    print_ip_4(ip4Hdr, "IN (def) = ");
+    int DO_SPLIT = strcmp(inet_ntoa(ip4Hdr->ip_src), "34.117.59.81")==0 || strcmp(inet_ntoa(ip4Hdr->ip_src), "1.1.1.1")==0;
 
-    //*
+    if (!DO_SPLIT)
+        return;
+
+    
+    // prepare incoming frame to inject
     size_t totalLen;
     unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, NULL, &IF_VPN_IP, NULL, NULL);
     if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
@@ -46,25 +54,20 @@ void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
         return;
     }
 
-    print_ip_4((const struct ip *)&buff[4], "           ---> ");
-
-    ssize_t sent = tun_write(&_virtualTunIf, buff, totalLen);
+    ssize_t sent;
+    //*
+    // INJECT TO VirtualTUN
+    sent = tun_write(&_virtualTunIf, buff, totalLen);
     if (sent != totalLen) {
-        fprintf(stderr, "Error injecting to UTUN\n");
+        perror("Error injecting to UTUN\n");
         return;
     }
     //*/
 
     /*
     // TEST <<<<<
-    // Forward all incoming data (on default interface) to VPN interface
-    size_t totalLen;
-    unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, NULL, &IF_VPN_IP, NULL, NULL);
-    if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
-        fprintf(stderr, "Error preparing data to inject UTUN\n");
-        return;
-    }
-    ssize_t sent = bpfWrite(_hdlr_VPN_injectOUT_bpf, buff, totalLen);
+    // INJECT TO VPN: Forward all incoming data (on default interface) to VPN interface
+    sent = bpfWrite(_hdlr_VPN_injectOUT_bpf, &buff[4], totalLen);
     if (sent != totalLen) {
         perror("Error injecting to VPN\n");
         return;
@@ -137,6 +140,15 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
     //print_pktap_header_all_details(pktapHdr, (unsigned char*) ip4Hdr, ntohs(ip4Hdr->ip_len));
     //printf(">>>>>>>>>>>>>>>>>>>>>>>>\n");
 
+    // <<< DELME <<<
+    //if (strcmp(inet_ntoa(ip4Hdr->ip_src), "1.1.1.1")==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), "1.1.1.1")==0
+    //    || strcmp(inet_ntoa(ip4Hdr->ip_src), "8.8.8.8")==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), "8.8.8.8")==0
+    //    ) {
+    //    print_pktap_header(pktapHdr, "");
+    //    print_ip_4((const struct ip*)ip4Hdr, "    ");
+    //}
+    // >>> DELME >>>
+
     // process only outgoing packets
     if ((pktapHdr->pth_flags & PTH_FLAG_DIR_OUT)==0) {
         return 0;
@@ -159,7 +171,7 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
         size_t totalLen;
         unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, 
             &IF_DEFAULT_IP, NULL, 
-            IF_DEFAULT_MAC, ROUTER_MAC);
+            IF_DEFAULT_MAC, ROUTER_MAC); // !!! IF_DEFAULT_MAC -> NULL ???            
 
         if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
             perror("Error preparing data to inject UTUN\n");

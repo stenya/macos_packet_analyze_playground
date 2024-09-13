@@ -21,14 +21,14 @@
 
 #include <errno.h> 
 
-#define BPF_BUFFER_LENGTH 1024*4 
-
+#define DEFAULT_BUFFER_SIZE 16 * 1024 * 1024
 void* bpf_read_thread(void *bpf_fd);
 
 struct bpf_dev_handler {
     int bpf_fd;
     void (*onDataReceived)(unsigned char* ip4_header);
     int isTunInterface;
+    int read_buff_size;
 }; 
 
 int bpfOpen(const char *interface, int *bpf_fd, void (*onDataReceived)(unsigned char* ip4_header), int isTunInterface) {
@@ -51,6 +51,14 @@ int bpfOpen(const char *interface, int *bpf_fd, void (*onDataReceived)(unsigned 
         return -1;
     }
 
+    // Set buffer size
+    int buffer_size = DEFAULT_BUFFER_SIZE;
+    if (ioctl(*bpf_fd, BIOCSBLEN, &buffer_size) == -1) {
+        perror("Failed to set buffer size");
+        close(*bpf_fd);
+        return -1;
+    }
+
     // Attach the BPF device to the specified network interface
     strncpy(ifr.ifr_name, interface, sizeof(ifr.ifr_name));
     if (ioctl(*bpf_fd, BIOCSETIF, &ifr) == -1) {
@@ -58,15 +66,6 @@ int bpfOpen(const char *interface, int *bpf_fd, void (*onDataReceived)(unsigned 
         close(*bpf_fd);
         return -1;
     }
-
-    // Set buffer size
-    /*
-    int buffer_size = DEFAULT_BUFFER_SIZE;
-    if (ioctl(*bpf_fd, BIOCSBLEN, &buffer_size) == -1) {
-        perror("Failed to set buffer size");
-        close(*bpf_fd);
-        return -1;
-    }*/
 
     // Set immediate mode
     int immediate = 1;
@@ -97,6 +96,7 @@ int bpfOpen(const char *interface, int *bpf_fd, void (*onDataReceived)(unsigned 
         hdlr->bpf_fd = *bpf_fd;
         hdlr->onDataReceived = onDataReceived;
         hdlr->isTunInterface = isTunInterface;
+        hdlr->read_buff_size = buffer_size;
 
         printf("Creating BPF reader thread\n");
         pthread_t   thread;
@@ -123,20 +123,21 @@ void* bpf_read_thread(void *arg) {
     printf("BPF reader thread started\n");
         
     // Read packets from the BPF device
-    char buffer[BPF_BUFFER_LENGTH] = {0};
+    char* buffer = malloc(hdlr->read_buff_size);
+    memset(buffer, 0, hdlr->read_buff_size);
 
     int exit = 0;
     while (!exit)
     {        
         ssize_t length;
         while (1) {
-            length = read(hdlr->bpf_fd, buffer, BPF_BUFFER_LENGTH);
+            length = read(hdlr->bpf_fd, buffer, hdlr->read_buff_size);
             if (length == -1) {
                 if (errno == EINTR) {
                     continue; // Retry if interrupted by a signal
                 } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     // Resource temporarily unavailable, wait and retry
-                    usleep(1000); // Sleep for 1 millisecond
+                    // usleep(1000); // Sleep for 1 millisecond
                     continue;
                 } else {
                     perror("Failed to read from BPF device");
@@ -195,6 +196,8 @@ void* bpf_read_thread(void *arg) {
     }
 
     free(hdlr);
+    free(buffer);
+
     return NULL;
 }
 
