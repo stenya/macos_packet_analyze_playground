@@ -13,12 +13,21 @@
 #include "config.h"
 #include "tun.h"
 
+// TEST: remote addresses to split connections
+#define _TEST_SPLIT_ADDR1 "34.117.59.81"
+#define _TEST_SPLIT_ADDR2 "1.1.1.1"
+
 int                     _hdlr_DEF_bpf           = -1; // for OUT:VPN->vTUN->DEF and IN:DEF-> (VPN/vTUN ???) 
 int                     _hdlr_VPN_injectOUT_bpf = -1; // for OUT:VPN->vTUN->VPN
 
 struct tun_handler      _virtualTunIf; // Virtual TUN interface (created). 
 
+#define _buffer_size sizeof(struct ether_header) + 0xFFFF
+unsigned char _buffer_en0_write[_buffer_size] = {0};
+unsigned char _buffer_tun_write[_buffer_size] = {0};
+
 unsigned char*  prepare_data_to_inject(
+        unsigned char* buffer,
         size_t* out_buffer_len,
         struct ip* orig_ip4Hdr, 
         const struct in_addr* srcIP,  const struct in_addr* dstIP,
@@ -31,27 +40,23 @@ void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
     // Forward all incoming packets from default interface to VirtualTunnel 
     //
 
-    // TEST: SKIP IP ADDRESS OF VPN SERVER ???
-    //if (strcmp(inet_ntoa(ip4Hdr->ip_src), VPN_SERVER_IP_STR)==0 )
-    //    return;
     // Drop attempt to send packets to tun IP on the real interface
      if (strcmp(inet_ntoa(ip4Hdr->ip_dst), IF_VPN_IP_STR)==0 )
         return;
 
-    int DO_SPLIT = strcmp(inet_ntoa(ip4Hdr->ip_src), "34.117.59.81")==0 || strcmp(inet_ntoa(ip4Hdr->ip_src), "1.1.1.1")==0;
-
+    int DO_SPLIT = strcmp(inet_ntoa(ip4Hdr->ip_src), _TEST_SPLIT_ADDR1)==0 || strcmp(inet_ntoa(ip4Hdr->ip_src), _TEST_SPLIT_ADDR2)==0;
     if (!DO_SPLIT)
         return;
 
-    print_ip_4((const struct ip*)ip4Hdr, "IN en0:  ");
-
     // prepare incoming frame to inject
     size_t totalLen;
-    unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, NULL, &IF_VPN_IP, NULL, NULL);
+    unsigned char* buff = prepare_data_to_inject(_buffer_tun_write, &totalLen, ip4Hdr, NULL, &IF_VPN_IP, NULL, NULL);
     if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
         perror("Error preparing data to inject UTUN\n");
         return;
     }
+
+    print_ip_4((const struct ip*)ip4Hdr,   "IN en0:  ");
     print_ip_4((const struct ip*)&buff[4], "  en0->utun:");
 
     ssize_t sent;
@@ -153,19 +158,6 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
     if (pktapHdr == NULL || ip4Hdr == NULL) 
         return -1;
 
-    //printf("<<<<<<<<<<<<<<<<<<<<<<<<\n");
-    //print_pktap_header_all_details(pktapHdr, (unsigned char*) ip4Hdr, ntohs(ip4Hdr->ip_len));
-    //printf(">>>>>>>>>>>>>>>>>>>>>>>>\n");
-
-    // <<< DELME <<<
-    //if (strcmp(inet_ntoa(ip4Hdr->ip_src), "1.1.1.1")==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), "1.1.1.1")==0
-    //    || strcmp(inet_ntoa(ip4Hdr->ip_src), "8.8.8.8")==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), "8.8.8.8")==0
-    //    ) {
-    //    print_pktap_header(pktapHdr, "");
-    //    print_ip_4((const struct ip*)ip4Hdr, "    ");
-    //}
-    // >>> DELME >>>
-
     // process only outgoing packets
     if ((pktapHdr->pth_flags & PTH_FLAG_DIR_OUT)==0) {
         return 0;
@@ -180,13 +172,13 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
 
     //
     // TEST: 
-    // Connection to "34.117.59.81" and "1.1.1.1" send over default interface
+    // Connection to _TEST_SPLIT_ADDR1 and _TEST_SPLIT_ADDR2 send over default interface
     //
-    DO_SPLIT = strcmp(inet_ntoa(ip4Hdr->ip_dst), "34.117.59.81")==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), "1.1.1.1")==0;
-
+    DO_SPLIT = strcmp(inet_ntoa(ip4Hdr->ip_dst), _TEST_SPLIT_ADDR1)==0 || strcmp(inet_ntoa(ip4Hdr->ip_dst), _TEST_SPLIT_ADDR2)==0;
     if (DO_SPLIT) {
         size_t totalLen;
-        unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, 
+        unsigned char* buff = prepare_data_to_inject(_buffer_en0_write,
+            &totalLen, ip4Hdr, 
             &IF_DEFAULT_IP, NULL, 
             IF_DEFAULT_MAC, ROUTER_MAC); // !!! IF_DEFAULT_MAC -> NULL ???            
 
@@ -194,8 +186,12 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
             perror("Error preparing data to inject UTUN\n");
             return -1;
         }        
+
+        print_ip_4((const struct ip*)ip4Hdr, "OUT utun:  ");
+        print_ip_4((const struct ip*)&buff[sizeof(struct ether_header)], "  utun->en0:");
+
         ssize_t sent = bpfWrite(_hdlr_DEF_bpf, buff, totalLen);
-        printf("OUT REDIRECTED %zd (of %zd)", sent, totalLen);
+
         if (sent != totalLen) {
             perror("Error injecting to UTUN\n");
             return -1;
@@ -215,9 +211,8 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
     return 0;
 }
 
-
-unsigned char buffer[sizeof(struct ether_header) + 0xFFFF] = {0};
 unsigned char*  prepare_data_to_inject(
+        unsigned char* buffer,
         size_t* out_buffer_len,
         struct ip* orig_ip4Hdr, 
         const struct in_addr* srcIP,  const struct in_addr* dstIP,
@@ -232,7 +227,7 @@ unsigned char*  prepare_data_to_inject(
     if (srcMAC != NULL && dstMAC != NULL) {        
         // MAC addresses are defined
         totalLen = sizeof(struct ether_header) + ip4FrameLen;
-        if (totalLen > sizeof(buffer))
+        if (totalLen > _buffer_size)
             return NULL;
 
         //memset(buffer, 0, totalLen);    // TODO: we can skip this memset
@@ -246,7 +241,7 @@ unsigned char*  prepare_data_to_inject(
     } else {
         // MAC addresses are NOT defined
         totalLen = 4 + ip4FrameLen;     // "02 00 00 00" + orig_ip4Hdr
-        if (totalLen > sizeof(buffer))
+        if (totalLen > _buffer_size)
             return NULL;
 
         //memset(buffer, 0, totalLen);    // TODO: we can skip this memset

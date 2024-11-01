@@ -173,9 +173,6 @@ void* bpf_read_thread(void *arg) {
                 uint32_t protocol_family = ntohl(*(uint32_t *)packet_data);
                 if (protocol_family != AF_INET) // IPv4
                    continue;
-                //uint32_t protocol_family = *(uint32_t *)packet_data;
-                //if (protocol_family != AF_INET) // IPv4
-                //   continue;
                 
                 struct ip *ip_header = (struct ip *)(packet_data + 4);
                 if (hdlr->onDataReceived)
