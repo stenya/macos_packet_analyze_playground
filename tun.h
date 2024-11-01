@@ -4,14 +4,14 @@
 #include <unistd.h>
 #include <net/if.h>
 
-typedef void (*fn_on_data)(const uint8_t *buffer, ssize_t length);
+typedef int (*fn_on_data)(const uint8_t *buffer, ssize_t length);
 
 struct tun_handler{
     // Configuration
     char*       cfg_ip;             // Configuration: IP address to assign to the interface
     char*       cfg_dst_ptp_ip;     // Configuration: Destination point-to-point IP address
     char*       cfg_subnet_mask;    // Configuration: Subnet mask
-
+    int         cfg_mtu;            // Configuration: MTU
     fn_on_data  onDataReceived;     // "data received" event handler
 
     // Info about the initialised interface

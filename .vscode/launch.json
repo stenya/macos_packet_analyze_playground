@@ -45,6 +45,20 @@
 
             "MIMode": "lldb",
             "preLaunchTask": "build_bpf",
+        },
+        {
+            "name": "Debug PKTAP",
+            "type": "cppdbg",
+            "request": "launch",
+            
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}",
+            
+            "program": "${workspaceFolder}/pktap.out",
+            "args": [],
+
+            "MIMode": "lldb",
+            "preLaunchTask": "build_pktap",
         }
     ]
 }

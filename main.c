@@ -11,5 +11,5 @@ int main() {
     }
   
     classify_INIT();
-    return do_pktap_read_vTun(on_PKTAP_packet); // OK
+    return do_pktap_read_all(on_PKTAP_packet, NULL); // OK
 }

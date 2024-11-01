@@ -139,6 +139,16 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
             }
         }
 
+        // Set the MTU
+        if (hdlr->cfg_mtu > 0) {
+            ifr.ifr_mtu = hdlr->cfg_mtu;
+            if (ioctl(fd_config, SIOCSIFMTU, &ifr) == -1) {
+                close(fd_config);
+                initDoneWithError(hdlr, "ioctl SIOCSIFMTU");
+                return 1;
+            }
+        }
+
         close(fd_config);
         printf("Assigned IP address to %s\n", hdlr->ifname);
     }
@@ -153,9 +163,11 @@ int tun_create_and_run_reader_sync(struct tun_handler* hdlr) {
 
     fn_on_data  funcDataReceived = hdlr->onDataReceived;
 
+    // Swallow all data written to the tun by reading from it
+    // Do this to prevent the read buffer from filling up and preventing writes
     printf("[!] Listening for data on %s...\n", hdlr->ifname);
     while (hdlr->sock_fd>=0) {
-        nbytes = read(hdlr->sock_fd, buffer, sizeof(buffer));
+        nbytes = read(hdlr->sock_fd, buffer, buffsize);
         if (nbytes < 0) {
             perror("read");
             break;

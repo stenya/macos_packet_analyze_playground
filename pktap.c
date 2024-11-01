@@ -21,7 +21,7 @@
 
 typedef int pkt_handle_func(const struct pktap_header *pktapHdr, struct ip* ip4Hdr);
 pkt_handle_func*    _pkt_handler    = NULL;
-int                 _debug          = 0;
+int                 _pktap_debug    = 0;
 
 // Packet handler function
 void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
@@ -38,7 +38,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     // PKTAP HEADER
     struct pktap_header *pktapHdr = (struct pktap_header *) packet;
 
-    if (_debug) 
+    if (_pktap_debug) 
         print_pktap_header(pktapHdr, "***");
     
     const u_char* data = NULL;
@@ -52,9 +52,9 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     }
 
     // Ethernet header 
-    // THIS IS JUST FOR TESTS (not for use in produxtion): 
+    // THIS IS JUST FOR TESTS (not for use in production): 
     // if offset equals ether_header size - we read this data as ether_header
-    if (_debug && pktapHdr->pth_frame_pre_length == sizeof(struct ether_header))      
+    if (_pktap_debug && pktapHdr->pth_frame_pre_length == sizeof(struct ether_header))      
         print_ether_header((struct ether_header *)data, "   ");
 
     struct ip *ip4Hdr   = NULL;
@@ -66,7 +66,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
         ip6Hdr = (struct ip6_hdr *)&data[pktapHdr->pth_frame_pre_length];    
 
     // <<<<<<< LOGGING (DEBUG)
-    if (_debug) 
+    if (_pktap_debug) 
     {        
         const struct tcphdr *tcpHdr = NULL;
         const struct udphdr *udpHdr = NULL;
@@ -97,7 +97,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     return; 
 }
 
-int do_pktap_read_vTun(pkt_handle_func *hdlr) {
+int do_pktap_read_all(pkt_handle_func *hdlr, pcap_t **out_pcap) {
     _pkt_handler    = hdlr;
 
     char errBuff[PCAP_ERRBUF_SIZE];
@@ -106,6 +106,8 @@ int do_pktap_read_vTun(pkt_handle_func *hdlr) {
         fprintf(stderr, "Error creating packet tap\n");
         return -1;
     }
+    if (out_pcap!=NULL)
+        *out_pcap = pkap;
 
     int ret = pcap_set_want_pktap(pkap, 1);
     printf("pcap_set_want_pktap=%d\n", ret);

@@ -27,8 +27,6 @@ unsigned char*  prepare_data_to_inject(
 void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
     struct ip* ip4Hdr = (struct ip*)ip4_header;
 
-    print_ip_4((const struct ip*)ip4Hdr, "EN0:  ");
-
     //
     // Forward all incoming packets from default interface to VirtualTunnel 
     //
@@ -37,7 +35,7 @@ void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
     //if (strcmp(inet_ntoa(ip4Hdr->ip_src), VPN_SERVER_IP_STR)==0 )
     //    return;
     // Drop attempt to send packets to tun IP on the real interface
-     if (strcmp(inet_ntoa(ip4Hdr->ip_src), IF_VPN_IP_STR)==0 )
+     if (strcmp(inet_ntoa(ip4Hdr->ip_dst), IF_VPN_IP_STR)==0 )
         return;
 
     int DO_SPLIT = strcmp(inet_ntoa(ip4Hdr->ip_src), "34.117.59.81")==0 || strcmp(inet_ntoa(ip4Hdr->ip_src), "1.1.1.1")==0;
@@ -45,14 +43,16 @@ void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
     if (!DO_SPLIT)
         return;
 
-    
+    print_ip_4((const struct ip*)ip4Hdr, "IN en0:  ");
+
     // prepare incoming frame to inject
     size_t totalLen;
     unsigned char* buff = prepare_data_to_inject(&totalLen, ip4Hdr, NULL, &IF_VPN_IP, NULL, NULL);
     if (buff == NULL || totalLen <= 4 + sizeof(struct ip)) {
-        fprintf(stderr, "Error preparing data to inject UTUN\n");
+        perror("Error preparing data to inject UTUN\n");
         return;
     }
+    print_ip_4((const struct ip*)&buff[4], "  en0->utun:");
 
     ssize_t sent;
     //*
@@ -76,6 +76,21 @@ void onIncomingPacketOnDefaultIf(unsigned char* ip4_header) {
     //*/
 }
 
+int onTunGarbage(const uint8_t *buffer, ssize_t length) {
+    /*
+    if (length < sizeof(struct ip)+4)
+        return -1;
+
+    uint32_t protocol_family = ntohl(*(uint32_t *)buffer);
+    if (protocol_family != AF_INET) // IPv4    
+        return -1;
+    struct ip *ip_header = (struct ip *)(buffer + 4);
+
+    print_ip_4((const struct ip*)ip_header, "garbage:");
+    */
+    return 0;
+}
+
 int classify_INIT()
 {    
     const char*  OUT_IF_NAME = IF_DEFAULT_NAME;
@@ -87,6 +102,8 @@ int classify_INIT()
     _virtualTunIf.cfg_ip = (char*)IF_VTUN_IP_STR;
     _virtualTunIf.cfg_dst_ptp_ip = (char*)IF_VTUN_PTP_IP_STR;
     _virtualTunIf.cfg_subnet_mask = (char*)IF_VTUN_MASK_STR;
+    _virtualTunIf.cfg_mtu = IF_VTUN_MTU;
+    _virtualTunIf.onDataReceived = onTunGarbage;
 
     if (tun_thread_run(&_virtualTunIf)!=0) {
         fprintf(stderr, "Error opening TUN interface\n");
@@ -178,6 +195,7 @@ int on_PKTAP_packet(const struct pktap_header *pktapHdr, struct ip* ip4Hdr)
             return -1;
         }        
         ssize_t sent = bpfWrite(_hdlr_DEF_bpf, buff, totalLen);
+        printf("OUT REDIRECTED %zd (of %zd)", sent, totalLen);
         if (sent != totalLen) {
             perror("Error injecting to UTUN\n");
             return -1;

@@ -170,12 +170,12 @@ void* bpf_read_thread(void *arg) {
                 // and the Ethernet header is not present.
                 // We should check the first 4 bytes and skip the Ethernet header if not present.
                 
-                //uint32_t protocol_family = ntohl(*(uint32_t *)packet_data);
-                //if (protocol_family != AF_INET) // IPv4
-                //   continue;
-                uint32_t protocol_family = *(uint32_t *)packet_data;
+                uint32_t protocol_family = ntohl(*(uint32_t *)packet_data);
                 if (protocol_family != AF_INET) // IPv4
                    continue;
+                //uint32_t protocol_family = *(uint32_t *)packet_data;
+                //if (protocol_family != AF_INET) // IPv4
+                //   continue;
                 
                 struct ip *ip_header = (struct ip *)(packet_data + 4);
                 if (hdlr->onDataReceived)
@@ -184,9 +184,7 @@ void* bpf_read_thread(void *arg) {
                 struct ether_header *eth_header = (struct ether_header *)packet_data;
                 int ethType = ntohs(eth_header->ether_type);   
                 if (ethType != ETHERTYPE_IP) // TODO: ETHERTYPE_IPV6
-                {
                     continue;
-                }
                 struct ip *ip_header = (struct ip *)(packet_data + sizeof(struct ether_header));
                 if (hdlr->onDataReceived)
                     hdlr->onDataReceived((unsigned char*) ip_header);

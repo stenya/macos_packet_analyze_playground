@@ -36,8 +36,8 @@ void print_ip_4(const struct ip* ipHdr, const char* prefix)
 {
     char src_ip[INET_ADDRSTRLEN];
     char dst_ip[INET_ADDRSTRLEN];
-    strcpy(src_ip, inet_ntoa(ipHdr->ip_src));
-    strcpy(dst_ip, inet_ntoa(ipHdr->ip_dst));
+    strncpy(src_ip, inet_ntoa(ipHdr->ip_src), INET_ADDRSTRLEN);
+    strncpy(dst_ip, inet_ntoa(ipHdr->ip_dst), INET_ADDRSTRLEN);
     printf("%sIP(%d): proto=%d [%s] ==> [%s]\n", 
         prefix,
         ipHdr->ip_v, ipHdr->ip_p, src_ip, dst_ip);
